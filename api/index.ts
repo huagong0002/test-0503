@@ -39,8 +39,8 @@ app.use((req, res, next) => {
   const origin = req.get('Origin');
   
   if (origin) {
-    // 只要来源包含 sd-education.online，就反射该来源并允许凭证
-    if (origin.includes('sd-education.online') || origin.includes('localhost')) {
+    // 只要来源包含 sd-education.online 或 .run.app (AI Studio)，就反射该来源并允许凭证
+    if (origin.includes('sd-education.online') || origin.includes('localhost') || origin.includes('.run.app')) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else {
@@ -314,7 +314,7 @@ app.all('/api/*', (req, res) => {
 });
 
 // Vite middleware for development
-async function setupVite() {
+async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -328,25 +328,19 @@ async function setupVite() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Listen on port 3000
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running locally on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
 }
 
-// Initializing the server environment
-setupVite().catch(err => {
-  console.error('Failed to setup Vite:', err);
+// Start the server
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
 });
 
 // Export for Vercel
 export default app;
-
-// Listen only if not in Vercel
-const isVercel = process.env.VERCEL === '1' || !!process.env.NOW_REGION;
-const shouldListen = !isVercel && (process.env.NODE_ENV !== 'production' || process.env.RENDER || process.env.K_SERVICE || process.env.PORT);
-
-if (shouldListen) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running locally on http://localhost:${PORT}`);
-  });
-} else if (isVercel) {
-  console.log('🚀 Server starting in Vercel Serverless environment');
-}
 
