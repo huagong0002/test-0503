@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'node:crypto';
@@ -22,38 +21,27 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 let supabase: any = null;
 
 try {
-  if (supabaseUrl && supabaseKey && !supabaseUrl.includes('your-project.supabase.co')) {
+  if (supabaseUrl && supabaseKey && supabaseUrl.startsWith('http')) {
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log('✅ Supabase Client Initialized');
+  } else {
+    console.warn('⚠️ Supabase URL or Key missing or invalid');
   }
 } catch (error) {
   console.error('❌ Supabase Init Error:', error);
 }
 
-// 0. Trust Proxy for Cloudflare/Load Balancers
+// Global Error Handler for unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// 0. Trust Proxy
 app.set('trust proxy', true);
 
-// 1. Basic Middlewares
-// 使用 robust 的 cors 中间件处理跨域
+// 1. CORS Middleware
 app.use(cors({
-  origin: (origin, callback) => {
-    // 允许没有 origin (比如同源请求、curl 等)
-    if (!origin) return callback(null, true);
-    
-    // 允许所有 sd-education.online 子域名、AI Studio 环境和 localhost
-    if (
-      origin.includes('sd-education.online') || 
-      origin.includes('.run.app') || 
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
-    ) {
-      callback(null, true);
-    } else {
-      // 其他来源允许跨域，但浏览器会因为 Credentials 检查而受限
-      // 如果需要更宽松，这里可以返回 true
-      callback(null, true); 
-    }
-  },
+  origin: true, // Allow all origins for debugging, or keep your logic
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin', 'Cookie', 'X-JSON'],
@@ -62,58 +50,32 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 
-// 2. Logger Middleware
+// 2. Logger
 app.use((req, res, next) => {
-  const start = Date.now();
-  console.log(`[REQ] ${req.method} ${req.url}`);
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(`[RES] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
-  });
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// In-memory Fallback (for local dev without supabase)
+// Fallbacks
 let LOCAL_STORE: any[] = [];
 let LOCAL_USERS: any[] = [
   { id: '1', username: 'admin', password: 'admin123', email: 'admin@e-listen.com', role: 'admin' },
   { id: '2', username: 'tester', password: 'password', email: 'tester@example.com', role: 'user' }
 ];
 
-// Log Vercel environment for debugging
-if (process.env.VERCEL) {
-  console.log(`[Vercel] Function execution started. Path: ${process.env.VERCEL_URL || 'Unknown'}`);
-}
-
 // 3. API Routes
-app.get('/ping', (req, res) => res.send('pong'));
-app.get('/api', (req, res) => {
-  res.json({ 
-    message: 'E-Listen API Server (Vercel Ready)',
-    timestamp: new Date().toISOString(),
-    endpoints: [
-      '/api/health',
-      '/api/materials',
-      '/api/login',
-      '/api/register'
-    ]
-  });
-});
-
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    supabaseConnected: !!supabase,
-    env: process.env.NODE_ENV,
-    vercel: !!process.env.VERCEL,
-    serverTime: new Date().toISOString(),
-    reqInfo: {
-      origin: req.get('Origin') || 'None',
-      host: req.get('host'),
-      url: req.url,
-      originalUrl: req.originalUrl
-    }
-  });
+  try {
+    res.json({ 
+      status: 'ok', 
+      supabase: !!supabase,
+      env: process.env.NODE_ENV,
+      vercel: !!process.env.VERCEL,
+      time: new Date().toISOString()
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/cors-test', (req, res) => {
@@ -334,11 +296,17 @@ async function startServer() {
   const isVercel = !!process.env.VERCEL;
   
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer } = await import('vite');
+      const vite = await createServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('✅ Vite middleware initialized');
+    } catch (e) {
+      console.error('❌ Failed to load Vite:', e);
+    }
   } else if (!isVercel) {
     // Only serve static files if NOT on Vercel (Vercel handles this via vercel.json)
     const distPath = path.join(process.cwd(), 'dist');
@@ -365,5 +333,14 @@ startServer().catch(err => {
 });
 
 // Export for Vercel
+app.use((err, req, res, next) => {
+  console.error('💥 Global Error Handler:', err);
+  res.status(500).json({ 
+    error: 'Internal Server Error', 
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
+
 export default app;
 
