@@ -34,34 +34,31 @@ try {
 app.set('trust proxy', true);
 
 // 1. Basic Middlewares
-// 极其强力的跨域处理，确保所有子域名都能正常访问
-app.use((req, res, next) => {
-  const origin = req.get('Origin');
-  
-  if (origin) {
-    // 只要来源包含 sd-education.online 或 .run.app (AI Studio)，就反射该来源并允许凭证
-    if (origin.includes('sd-education.online') || origin.includes('localhost') || origin.includes('.run.app')) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
+// 使用 robust 的 cors 中间件处理跨域
+app.use(cors({
+  origin: (origin, callback) => {
+    // 允许没有 origin (比如同源请求、curl 等)
+    if (!origin) return callback(null, true);
+    
+    // 允许所有 sd-education.online 子域名、AI Studio 环境和 localhost
+    if (
+      origin.includes('sd-education.online') || 
+      origin.includes('.run.app') || 
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1')
+    ) {
+      callback(null, true);
     } else {
-      // 其他来源允许跨域请求，但不能带凭证
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // 其他来源允许跨域，但浏览器会因为 Credentials 检查而受限
+      // 如果需要更宽松，这里可以返回 true
+      callback(null, true); 
     }
-  } else {
-    // 非浏览器请求或同源请求
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With, Origin, Cookie, X-JSON');
-  res.setHeader('Access-Control-Expose-Headers', 'Set-Cookie, Content-Length');
-
-  // 预检请求直接拦截返回
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  next();
-});
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin', 'Cookie', 'X-JSON'],
+  exposedHeaders: ['Set-Cookie', 'Content-Length']
+}));
 
 app.use(express.json({ limit: '50mb' }));
 

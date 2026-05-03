@@ -3,13 +3,13 @@ const getApiBase = () => {
   if (typeof window === 'undefined') return "";
   const host = window.location.hostname;
   
-  // 如果你在 sd-education.online 的任何子域名下（如 test, listening, echo）
-  // 我们强制指向主域名后端 https://www.sd-education.online
-  if (host.includes('sd-education.online') && !host.startsWith('www.')) {
-    return "https://www.sd-education.online";
+  // 如果是 localhost 或 AI Studio 环境，使用相对路径
+  if (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('.run.app')) {
+    return "";
   }
-  
-  // 在 AI Studio 预览环境、localhost 或已经在 www 上时使用相对路径
+
+  // 默认使用相对路径，除非明确需要跨域到主域名
+  // 这里我们改为默认使用相对路径，以解决 CORS 问题并确保访问的是当前环境的后端
   return ""; 
 };
 
