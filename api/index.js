@@ -87,8 +87,8 @@ app.get('/api/health', async (req, res) => {
       env: {
         hasUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
         urlPrefix: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').substring(0, 10) + '...',
-        hasKey: !!process.env.SUPABASE_ANON_KEY || !!process.env.VITE_SUPABASE_ANON_KEY,
-        keyLength: (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').length,
+        hasKey: !!process.env.SUPABASE_KEY || !!process.env.VITE_SUPABASE_KEY,
+        keyLength: (process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_KEY || '').length,
         nodeEnv: process.env.NODE_ENV,
         allKeys: Object.keys(process.env).filter(k => k.includes('SUPABASE'))
       },
