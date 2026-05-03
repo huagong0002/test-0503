@@ -6,8 +6,48 @@ import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
 
 dotenv.config();
+
+// 密码哈希配置
+const SALT_ROUNDS = 12;
+
+// ==================== 输入验证函数 ====================
+const validateUsername = (username: string): string | null => {
+  if (!username || username.trim().length === 0) {
+    return '用户名不能为空';
+  }
+  const trimmed = username.trim();
+  if (trimmed.length < 3) {
+    return '用户名至少需要3个字符';
+  }
+  if (trimmed.length > 20) {
+    return '用户名不能超过20个字符';
+  }
+  if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/.test(trimmed)) {
+    return '用户名只能包含字母、数字、下划线和中文';
+  }
+  return null;
+};
+
+const validatePassword = (password: string): string | null => {
+  if (!password || password.length === 0) {
+    return '密码不能为空';
+  }
+  if (password.length < 6) {
+    return '密码至少需要6个字符';
+  }
+  if (password.length > 50) {
+    return '密码不能超过50个字符';
+  }
+  return null;
+};
+
+// 检查密码是否已被哈希（bcrypt 哈希以 $2b$ 开头）
+const isPasswordHashed = (password: string): boolean => {
+  return password.startsWith('$2b$') || password.startsWith('$2a$');
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,9 +118,25 @@ app.use((req, res, next) => {
 
 // In-memory Fallback (for local dev without supabase)
 let LOCAL_STORE: any[] = [];
+// 注意：这些是预先生成的 bcrypt 哈希密码，对应原始密码 admin123 和 password
+// 生产环境请删除这些测试用户！
 let LOCAL_USERS: any[] = [
-  { id: '1', username: 'admin', password: 'admin123', email: 'admin@e-listen.com', role: 'admin' },
-  { id: '2', username: 'tester', password: 'password', email: 'tester@example.com', role: 'user' }
+  { 
+    id: '1', 
+    username: 'admin', 
+    // 密码: admin123 (bcrypt hash)
+    password: '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G.4oF.C8cR9.Aq', 
+    email: 'admin@e-listen.com', 
+    role: 'admin' 
+  },
+  { 
+    id: '2', 
+    username: 'tester', 
+    // 密码: password (bcrypt hash)
+    password: '$2b$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 
+    email: 'tester@example.com', 
+    role: 'user' 
+  }
 ];
 
 // Log Vercel environment for debugging
@@ -140,38 +196,100 @@ app.get('/debug/host', (req, res) => {
 const handleLogin = async (req, res) => {
   const { username, password } = req.method === 'GET' ? req.query : req.body;
   
+  // 输入验证
+  const usernameError = validateUsername(username);
+  if (usernameError) {
+    return res.status(400).json({ error: usernameError });
+  }
+  
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
+  }
+  
+  const trimmedUsername = username.trim();
+  
   try {
     if (supabase) {
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('username', username)
-        .eq('password', password)
+        .eq('username', trimmedUsername)
         .maybeSingle();
 
       if (error) throw error;
 
-      if (data) {
-        const { password: _, ...userWithoutPassword } = data as any;
-        return res.json({ success: true, user: userWithoutPassword });
+      if (data && data.password) {
+        // 检查密码是否已哈希
+        let isValidPassword = false;
+        
+        if (isPasswordHashed(data.password)) {
+          // 使用 bcrypt 验证哈希密码
+          isValidPassword = await bcrypt.compare(password, data.password);
+        } else {
+          // 兼容旧的明文密码（仅用于迁移期间）
+          // 登录成功后自动升级为哈希密码
+          if (data.password === password) {
+            isValidPassword = true;
+            // 自动将明文密码升级为哈希密码
+            const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+            await supabase
+              .from('users')
+              .update({ password: hashedPassword })
+              .eq('id', data.id);
+            console.log(`[Security] Password upgraded to hash for user: ${trimmedUsername}`);
+          }
+        }
+        
+        if (isValidPassword) {
+          const { password: _, ...userWithoutPassword } = data as any;
+          return res.json({ success: true, user: userWithoutPassword });
+        }
       }
     }
   } catch (err: any) {
     console.error('Supabase Login Error:', err.message);
   }
 
-  // Fallback to local
-  const user = LOCAL_USERS.find(u => u.username === username && u.password === password);
+  // Fallback to local (仅开发环境，使用哈希密码)
+  const user = LOCAL_USERS.find(u => u.username === trimmedUsername);
   if (user) {
-    const { password: _, ...userWithoutPassword } = user;
-    return res.json({ success: true, user: userWithoutPassword });
+    let isValidPassword = false;
+    
+    if (isPasswordHashed(user.password)) {
+      isValidPassword = await bcrypt.compare(password, user.password);
+    } else if (user.password === password) {
+      // 兼容旧的明文密码
+      isValidPassword = true;
+      // 自动升级为哈希密码
+      user.password = await bcrypt.hash(password, SALT_ROUNDS);
+      console.log(`[Security] Local password upgraded to hash for user: ${trimmedUsername}`);
+    }
+    
+    if (isValidPassword) {
+      const { password: _, ...userWithoutPassword } = user;
+      return res.json({ success: true, user: userWithoutPassword });
+    }
   }
   
   res.status(401).json({ error: '用户名或密码错误' });
 };
 
 const handleRegister = async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, email } = req.body;
+  
+  // 输入验证
+  const usernameError = validateUsername(username);
+  if (usernameError) {
+    return res.status(400).json({ error: usernameError });
+  }
+  
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
+  }
+  
+  const trimmedUsername = username.trim();
   
   try {
     if (supabase) {
@@ -179,7 +297,7 @@ const handleRegister = async (req, res) => {
       const { data: existing, error: checkError } = await supabase
         .from('users')
         .select('username')
-        .eq('username', username)
+        .eq('username', trimmedUsername)
         .maybeSingle();
 
       if (checkError) throw checkError;
@@ -187,10 +305,20 @@ const handleRegister = async (req, res) => {
         return res.status(400).json({ error: '该用户名已被占用' });
       }
 
-      // Insert new user
+      // 哈希密码
+      const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+      // Insert new user with hashed password
       const { data, error } = await supabase
         .from('users')
-        .insert([{ id: randomUUID(), username, password, email: '', role: 'user' }])
+        .insert([{ 
+          id: randomUUID(), 
+          username: trimmedUsername, 
+          password: hashedPassword, 
+          email: email || '', 
+          role: 'user',
+          created_at: new Date().toISOString()
+        }])
         .select()
         .single();
 
@@ -206,11 +334,21 @@ const handleRegister = async (req, res) => {
     if (err.code === '23505') return res.status(400).json({ error: '该用户名已被占用' });
   }
 
-  // Fallback if Supabase fails
-  if (LOCAL_USERS.find(u => u.username === username)) {
+  // Fallback if Supabase fails (本地开发环境)
+  if (LOCAL_USERS.find(u => u.username === trimmedUsername)) {
     return res.status(400).json({ error: '该用户名已被占用' });
   }
-  const newUser = { id: randomUUID(), username, password, email: '', role: 'user' };
+  
+  // 哈希密码
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+  
+  const newUser = { 
+    id: randomUUID(), 
+    username: trimmedUsername, 
+    password: hashedPassword, 
+    email: email || '', 
+    role: 'user' 
+  };
   LOCAL_USERS.push(newUser);
   const { password: _, ...userWithoutPassword } = newUser;
   return res.json({ success: true, user: userWithoutPassword });

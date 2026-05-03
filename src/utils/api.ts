@@ -2,11 +2,11 @@
 import type { ApiResponse, AuthResponse, ListeningMaterial, LoginRequest, RegisterRequest } from '../types';
 
 // API 基础路径配置
-const getApiBase = (): string =&gt; {
+const getApiBase = (): string => {
   if (typeof window === 'undefined') return '';
   const host = window.location.hostname;
 
-  if (host.includes('sd-education.online') &amp;&amp; !host.startsWith('www.')) {
+  if (host.includes('sd-education.online') && !host.startsWith('www.')) {
     return 'https://www.sd-education.online';
   }
 
@@ -16,7 +16,7 @@ const getApiBase = (): string =&gt; {
 const API_BASE = getApiBase();
 
 // 通用请求配置
-const getRequestConfig = (method: string, data?: any): RequestInit =&gt; {
+const getRequestConfig = (method: string, data?: any): RequestInit => {
   const config: RequestInit = {
     method,
     headers: {
@@ -27,7 +27,7 @@ const getRequestConfig = (method: string, data?: any): RequestInit =&gt; {
     credentials: API_BASE ? 'include' : 'same-origin',
   };
 
-  if (data &amp;&amp; method !== 'GET') {
+  if (data && method !== 'GET') {
     config.body = JSON.stringify(data);
   }
 
@@ -35,13 +35,13 @@ const getRequestConfig = (method: string, data?: any): RequestInit =&gt; {
 };
 
 // 处理 API 响应
-async function handleResponse&lt;T&gt;(response: Response): Promise&lt;T&gt; {
+async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type');
   
   if (!response.ok) {
     let errorMessage = `请求失败: ${response.status}`;
     
-    if (contentType &amp;&amp; contentType.includes('application/json')) {
+    if (contentType && contentType.includes('application/json')) {
       try {
         const errorData = await response.json();
         errorMessage = errorData.error || errorData.message || errorMessage;
@@ -56,7 +56,7 @@ async function handleResponse&lt;T&gt;(response: Response): Promise&lt;T&gt; {
     throw new Error(errorMessage);
   }
 
-  if (contentType &amp;&amp; contentType.includes('application/json')) {
+  if (contentType && contentType.includes('application/json')) {
     return response.json();
   }
   
@@ -69,23 +69,23 @@ export const authApi = {
   /**
    * 登录
    */
-  async login(data: LoginRequest): Promise&lt;AuthResponse&gt; {
+  async login(data: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(
       `${API_BASE}/api/login`,
       getRequestConfig('POST', data)
     );
-    return handleResponse&lt;AuthResponse&gt;(response);
+    return handleResponse<AuthResponse>(response);
   },
 
   /**
    * 注册
    */
-  async register(data: RegisterRequest): Promise&lt;AuthResponse&gt; {
+  async register(data: RegisterRequest): Promise<AuthResponse> {
     const response = await fetch(
       `${API_BASE}/api/register`,
       getRequestConfig('POST', data)
     );
-    return handleResponse&lt;AuthResponse&gt;(response);
+    return handleResponse<AuthResponse>(response);
   },
 };
 
@@ -95,34 +95,34 @@ export const materialsApi = {
   /**
    * 获取材料列表
    */
-  async getList(): Promise&lt;ListeningMaterial[]&gt; {
+  async getList(): Promise<ListeningMaterial[]> {
     const response = await fetch(
       `${API_BASE}/api/materials`,
       getRequestConfig('GET')
     );
-    return handleResponse&lt;ListeningMaterial[]&gt;(response);
+    return handleResponse<ListeningMaterial[]>(response);
   },
 
   /**
    * 同步材料到服务器
    */
-  async sync(materials: ListeningMaterial[]): Promise&lt;ApiResponse&lt;{ count: number; source: string }&gt;&gt; {
+  async sync(materials: ListeningMaterial[]): Promise<ApiResponse<{ count: number; source: string }>> {
     const response = await fetch(
       `${API_BASE}/api/materials/sync`,
       getRequestConfig('POST', { materials })
     );
-    return handleResponse&lt;ApiResponse&lt;{ count: number; source: string }&gt;&gt;(response);
+    return handleResponse<ApiResponse<{ count: number; source: string }>>(response);
   },
 
   /**
    * 删除材料
    */
-  async delete(id: string): Promise&lt;ApiResponse&gt; {
+  async delete(id: string): Promise<ApiResponse> {
     const response = await fetch(
       `${API_BASE}/api/materials/${id}`,
       getRequestConfig('DELETE')
     );
-    return handleResponse&lt;ApiResponse&gt;(response);
+    return handleResponse<ApiResponse>(response);
   },
 };
 
@@ -132,7 +132,7 @@ export const healthApi = {
   /**
    * 检查服务器健康状态
    */
-  async check(): Promise&lt;{ status: string; supabaseConnected: boolean }&gt; {
+  async check(): Promise<{ status: string; supabaseConnected: boolean }> {
     const response = await fetch(
       `${API_BASE}/api/health`,
       getRequestConfig('GET')
@@ -140,4 +140,3 @@ export const healthApi = {
     return handleResponse(response);
   },
 };
-
