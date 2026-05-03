@@ -64,13 +64,31 @@ let LOCAL_USERS: any[] = [
 ];
 
 // 3. API Routes
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
+    let dbTest = 'Not Attempted';
+    let dbError = null;
+    
+    if (supabase) {
+      const { data, error } = await supabase.from('users').select('count');
+      if (error) {
+        dbTest = 'Failed';
+        dbError = error.message;
+      } else {
+        dbTest = 'Success';
+      }
+    }
+
     res.json({ 
       status: 'ok', 
       supabase: !!supabase,
-      env: process.env.NODE_ENV,
-      vercel: !!process.env.VERCEL,
+      databaseConnection: dbTest,
+      databaseError: dbError,
+      env: {
+        hasUrl: !!process.env.SUPABASE_URL,
+        hasKey: !!process.env.SUPABASE_ANON_KEY,
+        nodeEnv: process.env.NODE_ENV
+      },
       time: new Date().toISOString()
     });
   } catch (e: any) {
@@ -249,11 +267,21 @@ app.post('/api/materials/sync', async (req, res) => {
         .from('materials')
         .upsert(records, { onConflict: 'id' });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase Upsert Error Detail:', {
+          code: error.code,
+          message: error.message,
+          hint: error.hint,
+          details: error.details
+        });
+        throw error;
+      }
       return res.json({ success: true, count: materials.length });
+    } else {
+      console.warn('⚠️ Supabase client not initialized, using memory fallback');
     }
   } catch (err: any) {
-    console.error('Sync Error:', err.message);
+    console.error('Sync Error Trace:', err);
   }
 
   // Fallback to local memory (shared)

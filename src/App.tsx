@@ -25,8 +25,9 @@ import {
   BookOpen, 
   Clock, 
   Plus, 
-  Trash2, 
-  Download, 
+  Trash2,
+  Lock,
+  Download,
   Upload,
   FastForward,
   Rewind,
@@ -226,6 +227,7 @@ export default function App() {
   };
 
   const createNewMaterial = () => {
+    if (!user) return;
     const newMaterial: ListeningMaterial = {
       id: generateId(),
       title: `新听力材料 ${materials.length + 1}`,
@@ -233,6 +235,7 @@ export default function App() {
       script: '',
       segments: [],
       lastModified: Date.now(),
+      userId: user.id
     };
     setMaterials(prev => [newMaterial, ...prev]);
     setCurrentMaterialId(newMaterial.id);
@@ -425,6 +428,16 @@ export default function App() {
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [syncScroll, setSyncScroll] = useState(true);
+
+  // 权限检查：只有管理员或创建者可以编辑
+  const canEdit = useMemo(() => {
+    if (!user || !material) return false;
+    // 管理员始终有权
+    if (user.username === 'admin' || user.role === 'admin') return true;
+    // 任务创建者有权
+    return material.userId === user.id;
+  }, [user, material]);
+
   const [editingSegmentIndex, setEditingSegmentIndex] = useState<number>(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -664,13 +677,15 @@ export default function App() {
                     {lastSaved} 已保存
                   </span>
                 )}
-                <button 
-                  onClick={handleImmediateSave}
-                  className="btn-glass p-2.5 rounded-xl text-blue-400 hover:text-white transition-all group"
-                  title="立即保存到云端"
-                >
-                  <Save size={18} className="group-active:scale-95" />
-                </button>
+                {canEdit && (
+                  <button 
+                    onClick={handleImmediateSave}
+                    className="btn-glass p-2.5 rounded-xl text-blue-400 hover:text-white transition-all group"
+                    title="立即保存到云端"
+                  >
+                    <Save size={18} className="group-active:scale-95" />
+                  </button>
+                )}
                 <button 
                   onClick={fetchLibrary}
                   className="btn-glass p-2.5 rounded-xl text-green-400 hover:text-white transition-all group"
@@ -687,6 +702,7 @@ export default function App() {
                   )}
                 >
                   <Upload size={20} /> 设置
+                  {!canEdit && material && <Lock size={12} className="text-amber-500" />}
                 </button>
                 <button 
                   onClick={() => setMode('library')}
@@ -705,6 +721,7 @@ export default function App() {
                   )}
                 >
                   <Settings2 size={20} /> 分段
+                  {!canEdit && material && <Lock size={12} className="text-amber-500" />}
                 </button>
                 <button 
                   onClick={() => setMode('train')}
@@ -911,7 +928,16 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="max-w-2xl mx-auto space-y-8"
             >
-              <div className="glass p-10 rounded-[32px] space-y-8">
+              <div className="glass p-10 rounded-[32px] space-y-8 relative">
+                {!canEdit && material.id !== 'demo-1' && (
+                  <div className="absolute inset-0 z-20 bg-black/40 backdrop-blur-[2px] flex items-center justify-center rounded-[32px]">
+                    <div className="glass p-6 rounded-2xl border-white/20 text-center space-y-3">
+                      <Lock size={32} className="mx-auto text-amber-500" />
+                      <p className="text-white font-bold">只读模式</p>
+                      <p className="text-slate-300 text-xs">您没有修改此材料参数的权限</p>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <h2 className="text-3xl font-bold text-white">开始新的听力任务</h2>
                   <p className="text-slate-400 text-sm">上传音频文件并粘贴听力脚本。包含 [00:15] 格式标记可自动分段。</p>
@@ -1037,7 +1063,11 @@ export default function App() {
                         <input 
                           value={material.title}
                           onChange={(e) => setMaterial(p => ({ ...p, title: e.target.value }))}
-                          className="text-sm text-blue-400 font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0"
+                          disabled={!canEdit}
+                          className={cn(
+                            "text-sm font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0",
+                            canEdit ? "text-blue-400" : "text-slate-500"
+                          )}
                           placeholder="输入材料标题..."
                         />
                       </div>
@@ -1046,14 +1076,15 @@ export default function App() {
                     <div className="flex gap-2">
                        <button 
                          onClick={clearAllSegments}
-                         disabled={material.segments.length === 0}
+                         disabled={!canEdit || material.segments.length === 0}
                          className="px-4 py-2 text-[10px] font-bold text-red-500 hover:bg-red-500/10 border border-red-500/20 rounded-xl transition-all uppercase tracking-widest disabled:opacity-30 flex items-center gap-2"
                        >
                          <Trash2 size={12} /> 全部清空
                        </button>
                        <button 
                          onClick={extractSegmentsFromScript}
-                         className="px-4 py-2 text-[10px] font-bold text-blue-400 hover:bg-blue-600/10 border border-blue-500/20 rounded-xl transition-all uppercase tracking-widest flex items-center gap-2"
+                         disabled={!canEdit}
+                         className="px-4 py-2 text-[10px] font-bold text-blue-400 hover:bg-blue-600/10 border border-blue-500/20 rounded-xl transition-all uppercase tracking-widest disabled:opacity-30 flex items-center gap-2"
                        >
                          <CheckCircle2 size={12} /> 从总脚本提取
                        </button>
@@ -1117,6 +1148,7 @@ export default function App() {
                     </h3>
                     <div className="flex gap-2">
                       <button 
+                        disabled={!canEdit}
                         onClick={() => {
                           const segments = material.segments || [];
                           const newSeg = {
@@ -1129,7 +1161,7 @@ export default function App() {
                           setMaterial(prev => ({ ...prev, segments: [...(prev.segments || []), newSeg] }));
                           setEditingSegmentIndex(segments.length);
                         }}
-                        className="w-10 h-10 bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all"
+                        className="w-10 h-10 bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <Plus size={20} />
                       </button>
@@ -1217,7 +1249,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-4">
                            <div className="flex items-center gap-2 glass-dark px-3 py-2 rounded-xl border-white/5">
-                              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">区间:</span>
+                               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">区间:</span>
                               <input 
                                 type="number" 
                                 value={Math.floor(material.segments[editingSegmentIndex].startTime)}
@@ -1226,7 +1258,8 @@ export default function App() {
                                   newSegs[editingSegmentIndex].startTime = parseInt(e.target.value) || 0;
                                   setMaterial(p => ({ ...p, segments: newSegs }));
                                 }}
-                                className="w-12 bg-transparent text-xs font-mono text-white text-center focus:outline-none"
+                                disabled={!canEdit}
+                                className="w-12 bg-transparent text-xs font-mono text-white text-center focus:outline-none disabled:opacity-50"
                               />
                               <span className="text-slate-700">-</span>
                               <input 
@@ -1237,7 +1270,8 @@ export default function App() {
                                   newSegs[editingSegmentIndex].endTime = parseInt(e.target.value) || 0;
                                   setMaterial(p => ({ ...p, segments: newSegs }));
                                 }}
-                                className="w-12 bg-transparent text-xs font-mono text-white text-center focus:outline-none"
+                                disabled={!canEdit}
+                                className="w-12 bg-transparent text-xs font-mono text-white text-center focus:outline-none disabled:opacity-50"
                               />
                               <span className="text-[9px] text-slate-500 font-bold uppercase ml-1">S</span>
                            </div>
@@ -1252,8 +1286,9 @@ export default function App() {
                             newSegs[editingSegmentIndex].subtitle = e.target.value;
                             setMaterial(p => ({ ...p, segments: newSegs }));
                           }}
-                          placeholder="在这里输入对应分段的听力脚本内容..."
-                          className="w-full h-full bg-transparent border-none text-lg text-slate-200 placeholder:text-slate-700 focus:outline-none focus:ring-0 resize-none leading-relaxed transition-all"
+                          disabled={!canEdit}
+                          placeholder={canEdit ? "在这里输入对应分段的听力脚本内容..." : "此听力脚本由创建者发布，仅供查阅"}
+                          className="w-full h-full bg-transparent border-none text-lg text-slate-200 placeholder:text-slate-700 focus:outline-none focus:ring-0 resize-none leading-relaxed transition-all disabled:opacity-70"
                         />
                         <div className="absolute bottom-6 right-8 opacity-20 pointer-events-none italic text-sm">
                           Markdown 支持加载演示

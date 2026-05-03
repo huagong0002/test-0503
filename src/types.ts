@@ -20,5 +20,5 @@ export interface ListeningMaterial {
   script: string;
   segments: AudioSegment[];
   lastModified: number;
-  authorId?: string;
+  userId?: string;
 }
