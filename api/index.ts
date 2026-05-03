@@ -15,8 +15,8 @@ const app = express();
 const PORT = 3000;
 
 // Supabase Initialization
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
 let supabase: any = null;
 
@@ -25,7 +25,7 @@ try {
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log('✅ Supabase Client Initialized');
   } else {
-    console.warn('⚠️ Supabase URL or Key missing or invalid');
+    console.warn(`⚠️ Supabase URL or Key missing. URL present: ${!!supabaseUrl}, Key present: ${!!supabaseKey}`);
   }
 } catch (error) {
   console.error('❌ Supabase Init Error:', error);
@@ -85,11 +85,12 @@ app.get('/api/health', async (req, res) => {
       databaseConnection: dbTest,
       databaseError: dbError,
       env: {
-        hasUrl: !!process.env.SUPABASE_URL,
-        urlPrefix: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 10) + '...' : 'none',
-        hasKey: !!process.env.SUPABASE_ANON_KEY,
-        keyLength: process.env.SUPABASE_ANON_KEY ? process.env.SUPABASE_ANON_KEY.length : 0,
-        nodeEnv: process.env.NODE_ENV
+        hasUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
+        urlPrefix: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').substring(0, 10) + '...',
+        hasKey: !!process.env.SUPABASE_ANON_KEY || !!process.env.VITE_SUPABASE_ANON_KEY,
+        keyLength: (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').length,
+        nodeEnv: process.env.NODE_ENV,
+        allKeys: Object.keys(process.env).filter(k => k.includes('SUPABASE'))
       },
       time: new Date().toISOString()
     });

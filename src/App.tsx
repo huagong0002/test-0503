@@ -244,8 +244,10 @@ export default function App() {
 
   const deleteMaterial = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (user?.role !== 'admin' && user?.username !== 'admin') {
-      alert('权限不足：只有管理员可以进行此操作');
+    const targetMaterial = materials.find(m => m.id === id);
+    const isOwnerOrAdmin = user?.role === 'admin' || user?.username === 'admin' || targetMaterial?.userId === user?.id;
+    if (!isOwnerOrAdmin) {
+      alert('权限不足：只有管理员或创建者可以删除此项');
       return;
     }
     if (user && window.confirm('确定要删除这个听力任务吗？（这将同步从云端库中移除）')) {
@@ -876,11 +878,11 @@ export default function App() {
                           )}>
                             <FileAudio size={24} />
                           </div>
-                          {(user?.role === 'admin' || user?.username === 'admin') && (
+                          {(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') && (
                             <button 
                               onClick={(e) => deleteMaterial(e, m.id)}
                               className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
-                              title="删除任务 (仅管理员)"
+                              title="删除任务 (仅创建者或管理员)"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -892,10 +894,18 @@ export default function App() {
                             onClick={(e) => e.stopPropagation()}
                             value={m.title}
                             onChange={(e) => {
+                              const canEditThis = (user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin');
+                              if (!canEditThis) return;
                               const newTitle = e.target.value;
                               setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, title: newTitle, lastModified: Date.now() } : item));
                             }}
-                            className="text-lg font-bold text-white bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded px-1 -ml-1 w-full hover:bg-white/5 transition-colors group-hover:text-blue-400"
+                            disabled={!(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin')}
+                            className={cn(
+                              "text-lg font-bold bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded px-1 -ml-1 w-full transition-colors",
+                              (user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') 
+                                ? "text-white hover:bg-white/5 group-hover:text-blue-400 cursor-text" 
+                                : "text-slate-500 cursor-default"
+                            )}
                           />
                           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-medium">
                             <span className="flex items-center gap-1"><Clock size={12} /> {m.segments.length}个分段</span>
@@ -1191,19 +1201,21 @@ export default function App() {
                                "text-xs font-bold",
                                editingSegmentIndex === idx ? "text-white" : "text-slate-400"
                              )}>{seg.label}</span>
-                             <button 
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 setMaterial(p => {
-                                   const remaining = p.segments.filter(s => s.id !== seg.id);
-                                   return { ...p, segments: remaining.map((s, i) => ({ ...s, label: `题目 ${i + 1}` })) };
-                                 });
-                                 if (editingSegmentIndex >= idx) setEditingSegmentIndex(Math.max(0, editingSegmentIndex - 1));
-                               }}
-                               className="p-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-md"
-                             >
-                               <Trash2 size={14} />
-                             </button>
+                             {canEdit && (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setMaterial(p => {
+                                     const remaining = p.segments.filter(s => s.id !== seg.id);
+                                     return { ...p, segments: remaining.map((s, i) => ({ ...s, label: `题目 ${i + 1}` })) };
+                                   });
+                                   if (editingSegmentIndex >= idx) setEditingSegmentIndex(Math.max(0, editingSegmentIndex - 1));
+                                 }}
+                                 className="p-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-md"
+                               >
+                                 <Trash2 size={14} />
+                               </button>
+                             )}
                           </div>
                           <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
                              <div className="flex items-center gap-1">
