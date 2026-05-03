@@ -309,7 +309,24 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('CRITICAL: Login Network Error', err);
-      setAuthError(`网络请求失败: ${err.message || '请检查您的网络连接或后端跨域配置'}`);
+      
+      // 提供更详细的错误信息
+      let errorMessage = '网络请求失败';
+      
+      if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+        // 检查是否是后端服务器未运行
+        if (API_BASE) {
+          errorMessage = `无法连接到服务器 (${API_BASE})。请检查后端服务是否正常运行。`;
+        } else {
+          errorMessage = '无法连接到后端服务。请确保开发服务器正在运行 (npm run dev)。';
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      } else {
+        errorMessage = '请检查您的网络连接或后端服务状态';
+      }
+      
+      setAuthError(`网络错误: ${errorMessage}`);
     }
   };
 

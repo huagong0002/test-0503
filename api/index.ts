@@ -74,13 +74,27 @@ try {
 app.set('trust proxy', true);
 
 // 1. Basic Middlewares
-// 极其强力的跨域处理，确保所有子域名都能正常访问
+// CORS 配置 - 使用白名单方式，更安全可靠
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://www.sd-education.online',
+];
+
 app.use((req, res, next) => {
   const origin = req.get('Origin');
   
   if (origin) {
-    // 只要来源包含 sd-education.online，就反射该来源并允许凭证
-    if (origin.includes('sd-education.online') || origin.includes('localhost')) {
+    // 检查 origin 是否在白名单中
+    const isAllowed = allowedOrigins.some(allowed => 
+      origin === allowed || origin.includes(allowed.replace('https://', '').replace('http://', ''))
+    );
+    
+    if (isAllowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (origin.includes('localhost') || origin.includes('sd-education.online')) {
+      // 兼容开发环境和 sd-education 子域名
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else {
@@ -223,22 +237,27 @@ const handleLogin = async (req, res) => {
         // 检查密码是否已哈希
         let isValidPassword = false;
         
-        if (isPasswordHashed(data.password)) {
-          // 使用 bcrypt 验证哈希密码
-          isValidPassword = await bcrypt.compare(password, data.password);
-        } else {
-          // 兼容旧的明文密码（仅用于迁移期间）
-          // 登录成功后自动升级为哈希密码
-          if (data.password === password) {
-            isValidPassword = true;
-            // 自动将明文密码升级为哈希密码
-            const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-            await supabase
-              .from('users')
-              .update({ password: hashedPassword })
-              .eq('id', data.id);
-            console.log(`[Security] Password upgraded to hash for user: ${trimmedUsername}`);
+        try {
+          if (isPasswordHashed(data.password)) {
+            // 使用 bcrypt 验证哈希密码
+            isValidPassword = await bcrypt.compare(password, data.password);
+          } else {
+            // 兼容旧的明文密码（仅用于迁移期间）
+            // 登录成功后自动升级为哈希密码
+            if (data.password === password) {
+              isValidPassword = true;
+              // 自动将明文密码升级为哈希密码
+              const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+              await supabase
+                .from('users')
+                .update({ password: hashedPassword })
+                .eq('id', data.id);
+              console.log(`[Security] Password upgraded to hash for user: ${trimmedUsername}`);
+            }
           }
+        } catch (hashError) {
+          console.error('Password verification error:', hashError);
+          return res.status(500).json({ error: '密码验证失败，请稍后重试' });
         }
         
         if (isValidPassword) {
@@ -249,6 +268,7 @@ const handleLogin = async (req, res) => {
     }
   } catch (err: any) {
     console.error('Supabase Login Error:', err.message);
+    return res.status(500).json({ error: '登录失败，请稍后重试' });
   }
 
   // Fallback to local (仅开发环境，使用哈希密码)
@@ -256,14 +276,19 @@ const handleLogin = async (req, res) => {
   if (user) {
     let isValidPassword = false;
     
-    if (isPasswordHashed(user.password)) {
-      isValidPassword = await bcrypt.compare(password, user.password);
-    } else if (user.password === password) {
-      // 兼容旧的明文密码
-      isValidPassword = true;
-      // 自动升级为哈希密码
-      user.password = await bcrypt.hash(password, SALT_ROUNDS);
-      console.log(`[Security] Local password upgraded to hash for user: ${trimmedUsername}`);
+    try {
+      if (isPasswordHashed(user.password)) {
+        isValidPassword = await bcrypt.compare(password, user.password);
+      } else if (user.password === password) {
+        // 兼容旧的明文密码
+        isValidPassword = true;
+        // 自动升级为哈希密码
+        user.password = await bcrypt.hash(password, SALT_ROUNDS);
+        console.log(`[Security] Local password upgraded to hash for user: ${trimmedUsername}`);
+      }
+    } catch (hashError) {
+      console.error('Local password verification error:', hashError);
+      return res.status(500).json({ error: '密码验证失败，请稍后重试' });
     }
     
     if (isValidPassword) {
