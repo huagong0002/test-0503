@@ -85,8 +85,8 @@ export default function App() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   // Persistence: Sync library to backend manual trigger
-  const syncToBackend = async (dataToSync = materials) => {
-    if (!user || !dataToSync || dataToSync.length === 0) return;
+    const syncToBackend = async (dataToSync = materials) => {
+    if (!user || !dataToSync) return;
     
     try {
       setLastSaved('同步中...');
@@ -99,7 +99,7 @@ export default function App() {
       });
       
       if (response.ok) {
-        localStorage.setItem(`echomaster_library_${user.id}`, JSON.stringify(dataToSync));
+        localStorage.setItem(`echomaster_library_shared`, JSON.stringify(dataToSync));
         setLastSaved(new Date().toLocaleTimeString());
       } else {
         setLastSaved('同步失败');
@@ -128,6 +128,8 @@ export default function App() {
     } catch (e: any) {
       console.error("Backend Library Refresh Error", e);
       setLastSaved('同步失败');
+      const savedLibrary = localStorage.getItem(`echomaster_library_shared`);
+      if (savedLibrary) setMaterials(JSON.parse(savedLibrary));
     }
   };
 
@@ -239,16 +241,25 @@ export default function App() {
 
   const deleteMaterial = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (user && window.confirm('确定要删除这个听力任务吗？（这将同步删除云端数据）')) {
+    if (user?.role !== 'admin' && user?.username !== 'admin') {
+      alert('权限不足：只有管理员可以进行此操作');
+      return;
+    }
+    if (user && window.confirm('确定要删除这个听力任务吗？（这将同步从云端库中移除）')) {
       try {
-        await fetch(`${API_BASE}/api/materials/${id}?userId=${user.id}`, { 
+        const response = await fetch(`${API_BASE}/api/materials/${id}?username=${user.username}`, { 
           method: 'DELETE',
           mode: 'cors',
           credentials: API_BASE ? 'include' : 'same-origin'
         });
-        setMaterials(prev => prev.filter(m => m.id !== id));
-        if (currentMaterialId === id) setCurrentMaterialId(null);
-      } catch (e) {
+        if (response.ok) {
+          setMaterials(prev => prev.filter(m => m.id !== id));
+          if (currentMaterialId === id) setCurrentMaterialId(null);
+        } else {
+          const err = await response.json();
+          alert(err.error || '删除失败');
+        }
+      } catch (e: any) {
         console.error("Delete Error", e);
       }
     }
@@ -848,12 +859,15 @@ export default function App() {
                           )}>
                             <FileAudio size={24} />
                           </div>
-                          <button 
-                            onClick={(e) => deleteMaterial(e, m.id)}
-                            className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          {(user?.role === 'admin' || user?.username === 'admin') && (
+                            <button 
+                              onClick={(e) => deleteMaterial(e, m.id)}
+                              className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
+                              title="删除任务 (仅管理员)"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
                         </div>
 
                         <div>

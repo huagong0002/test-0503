@@ -34,5 +34,9 @@ CREATE POLICY "Enable all access for now" ON users FOR ALL USING (true) WITH CHE
 DROP POLICY IF EXISTS "Users can only see their own materials" ON materials;
 CREATE POLICY "Users can only see their own materials" ON materials 
 FOR ALL USING (true) WITH CHECK (true); 
--- 注意：在生产环境中应该使用 auth.uid() = user_id
--- 这里为了兼容前端传入的 User ID 暂时保持宽松，但在代码层面实现过滤
+
+-- 5. 初始管理员账号
+INSERT INTO users (id, username, password, role, email)
+VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin123', 'admin', 'admin@e-listen.com')
+ON CONFLICT (username) DO NOTHING;
+

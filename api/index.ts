@@ -191,17 +191,12 @@ app.all(['/api/login', '/login'], handleLogin);
 app.all(['/api/register', '/register'], handleRegister);
 
 app.get('/api/materials', async (req, res) => {
-  const userId = req.query.userId as string;
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
-
   try {
     if (supabase) {
+      // Return ALL materials for a shared library experience
       const { data, error } = await supabase
         .from('materials')
         .select('*')
-        .eq('user_id', userId)
         .order('last_modified', { ascending: false });
       
       if (error) throw error;
@@ -220,14 +215,11 @@ app.get('/api/materials', async (req, res) => {
     }
   } catch (err: any) {
     console.error('Fetch Materials Error:', err.message);
-    if (err.message?.includes('relation "materials" does not exist')) {
-      return res.status(500).json({ 
-        error: '数据库表 "materials" 未找到。', 
-        suggestion: '请运行 SETUP_SUPABASE.sql。'
-      });
-    }
   }
-  res.json(LOCAL_STORE[userId] || []);
+  
+  // Flatten local store for everyone to see everything in memory fallback
+  const allLocal = Object.values(LOCAL_STORE).flat();
+  res.json(allLocal.sort((a,b) => b.lastModified - a.lastModified));
 });
 
 app.post('/api/materials/sync', async (req, res) => {
@@ -245,7 +237,7 @@ app.post('/api/materials/sync', async (req, res) => {
     if (supabase) {
       const records = materials.map(m => ({
         id: m.id,
-        user_id: userId,
+        user_id: m.userId || userId, // Preserve original creator if exists
         title: m.title || 'Untitled',
         audio_url: m.audioUrl,
         script: m.script || '',
@@ -258,47 +250,51 @@ app.post('/api/materials/sync', async (req, res) => {
         .upsert(records, { onConflict: 'id' });
 
       if (error) throw error;
-      return res.json({ success: true, count: materials.length, source: 'supabase' });
+      return res.json({ success: true, count: materials.length });
     }
   } catch (err: any) {
     console.error('Sync Error:', err.message);
   }
 
-  // Fallback to local memory
-  if (!LOCAL_STORE[userId]) LOCAL_STORE[userId] = [];
+  // Fallback to local memory (shared)
+  if (!LOCAL_STORE['shared']) LOCAL_STORE['shared'] = [];
   
   materials.forEach(newM => {
-    const index = LOCAL_STORE[userId].findIndex(m => m.id === newM.id);
+    const index = LOCAL_STORE['shared'].findIndex(m => m.id === newM.id);
     if (index !== -1) {
-      if (newM.lastModified > LOCAL_STORE[userId][index].lastModified) {
-        LOCAL_STORE[userId][index] = { ...newM, userId };
+      if (newM.lastModified > LOCAL_STORE['shared'][index].lastModified) {
+        LOCAL_STORE['shared'][index] = { ...newM, user_id: userId };
       }
     } else {
-      LOCAL_STORE[userId].push({ ...newM, userId });
+      LOCAL_STORE['shared'].push({ ...newM, user_id: userId });
     }
   });
   
-  LOCAL_STORE[userId].sort((a, b) => b.lastModified - a.lastModified);
-  res.json({ success: true, count: LOCAL_STORE[userId].length, source: 'memory' });
+  LOCAL_STORE['shared'].sort((a, b) => b.lastModified - a.lastModified);
+  res.json({ success: true, count: LOCAL_STORE['shared'].length });
 });
 
 app.delete('/api/materials/:id', async (req, res) => {
   const { id } = req.params;
-  const userId = req.query.userId as string;
+  const username = req.query.username as string;
+
+  // ONLY admin can delete
+  if (username !== 'admin') {
+    return res.status(403).json({ error: '只有管理员可以删除库文件' });
+  }
 
   try {
     if (supabase) {
-      const query = supabase.from('materials').delete().eq('id', id);
-      if (userId) query.eq('user_id', userId);
-      await query;
+      await supabase.from('materials').delete().eq('id', id);
     }
   } catch (e) {
     console.error('Delete Error:', e);
   }
 
-  if (userId && LOCAL_STORE[userId]) {
-    LOCAL_STORE[userId] = LOCAL_STORE[userId].filter(m => m.id !== id);
-  }
+  // Also remove from local fallback
+  Object.keys(LOCAL_STORE).forEach(uid => {
+    LOCAL_STORE[uid] = LOCAL_STORE[uid].filter(m => m.id !== id);
+  });
   
   res.json({ success: true });
 });
