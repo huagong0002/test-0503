@@ -86,7 +86,9 @@ app.get('/api/health', async (req, res) => {
       databaseError: dbError,
       env: {
         hasUrl: !!process.env.SUPABASE_URL,
+        urlPrefix: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 10) + '...' : 'none',
         hasKey: !!process.env.SUPABASE_ANON_KEY,
+        keyLength: process.env.SUPABASE_ANON_KEY ? process.env.SUPABASE_ANON_KEY.length : 0,
         nodeEnv: process.env.NODE_ENV
       },
       time: new Date().toISOString()
