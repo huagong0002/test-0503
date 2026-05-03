@@ -155,6 +155,12 @@ const handleLogin = async (req, res) => {
     }
   } catch (err: any) {
     console.error('Supabase Login Error:', err.message);
+    if (err.message?.includes('relation "users" does not exist')) {
+      return res.status(500).json({ 
+        error: '数据库表 "users" 未找到。', 
+        suggestion: '请先运行 SETUP_SUPABASE.sql 脚本。' 
+      });
+    }
   }
 
   // Fallback to local
@@ -200,6 +206,12 @@ const handleRegister = async (req, res) => {
     }
   } catch (err: any) {
     console.error('Supabase Register Error:', err.message);
+    if (err.message?.includes('relation "users" does not exist')) {
+      return res.status(500).json({ 
+        error: '数据库表 "users" 未找到。', 
+        suggestion: '请先运行 SETUP_SUPABASE.sql 脚本。' 
+      });
+    }
     if (err.code === '23505') return res.status(400).json({ error: '该用户名已被占用' });
   }
 
@@ -240,6 +252,13 @@ app.get('/api/materials', async (req, res) => {
     }
   } catch (err: any) {
     console.error('Fetch Materials Error:', err.message);
+    if (err.message?.includes('relation "materials" does not exist') || err.message?.includes('cache lookup failed for relation')) {
+      return res.status(500).json({ 
+        error: '数据库表 "materials" 未找到。', 
+        suggestion: '请在 Supabase SQL Editor 中运行应用根目录下的 SETUP_SUPABASE.sql 脚本来创建必要的表格。',
+        details: err.message
+      });
+    }
   }
   res.json(LOCAL_STORE);
 });
@@ -312,13 +331,16 @@ app.all('/api/*', (req, res) => {
 
 // Vite middleware for development
 async function startServer() {
+  const isVercel = !!process.env.VERCEL;
+  
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!isVercel) {
+    // Only serve static files if NOT on Vercel (Vercel handles this via vercel.json)
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -326,11 +348,15 @@ async function startServer() {
     });
   }
 
-  // Listen on port 3000
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running locally on http://localhost:${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
+  // Only listen if not on Vercel
+  if (!isVercel) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running locally on http://localhost:${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+  } else {
+    console.log('🚀 Server running in Vercel environment');
+  }
 }
 
 // Start the server
