@@ -84,36 +84,73 @@ export default function App() {
 
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
+  // Persistence: Sync library to backend manual trigger
+  const syncToBackend = async (dataToSync = materials) => {
+    if (!user || !dataToSync || dataToSync.length === 0) return;
+    
+    try {
+      setLastSaved('同步中...');
+      const response = await fetch(`${API_BASE}/api/materials/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materials: dataToSync, userId: user.id }),
+        mode: 'cors',
+        credentials: API_BASE ? 'include' : 'same-origin'
+      });
+      
+      if (response.ok) {
+        localStorage.setItem(`echomaster_library_${user.id}`, JSON.stringify(dataToSync));
+        setLastSaved(new Date().toLocaleTimeString());
+      } else {
+        setLastSaved('同步失败');
+      }
+    } catch (e: any) {
+      console.error("Backend Sync Error", e);
+      setLastSaved('网络异常');
+    }
+  };
+
+  const fetchLibrary = async () => {
+    if (!user) return;
+    try {
+      setLastSaved('正在同步...');
+      const response = await fetch(`${API_BASE}/api/materials?userId=${user.id}`, {
+        mode: 'cors',
+        credentials: API_BASE ? 'include' : 'same-origin'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setMaterials(data);
+          setLastSaved(new Date().toLocaleTimeString());
+        }
+      }
+    } catch (e: any) {
+      console.error("Backend Library Refresh Error", e);
+      setLastSaved('同步失败');
+    }
+  };
+
   // Persistence: Load library from backend on mount or user change
   useEffect(() => {
     if (!user) {
       setMaterials([]);
       return;
     }
-
-    const fetchLibrary = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/materials?userId=${user.id}`, {
-          mode: 'cors',
-          credentials: API_BASE ? 'include' : 'same-origin'
-        });
-        const contentType = response.headers.get('content-type');
-        
-        if (response.ok && contentType && contentType.includes('application/json')) {
-          const data = await response.json();
-          if (Array.isArray(data)) {
-            setMaterials(data);
-          }
-        }
-      } catch (e: any) {
-        console.error("Backend Library Load Error", e);
-        const savedLibrary = localStorage.getItem(`echomaster_library_${user.id}`);
-        if (savedLibrary) setMaterials(JSON.parse(savedLibrary));
-      }
-    };
-    
     fetchLibrary();
   }, [user]);
+
+  // Update effect for material selection
+  useEffect(() => {
+    if (currentMaterialId) {
+      const active = materials.find(m => m.id === currentMaterialId);
+      // Only update if the object in library is different or contains new data to avoid infinite loops
+      if (active && JSON.stringify(active) !== JSON.stringify(material)) {
+        setMaterial(active);
+      }
+      localStorage.setItem('echomaster_current_id', currentMaterialId);
+    }
+  }, [currentMaterialId, materials]);
 
   // Debug: Check Backend Health
   useEffect(() => {
@@ -132,38 +169,25 @@ export default function App() {
     checkHealth();
   }, []);
 
-  // Update effect for material selection
-  useEffect(() => {
-    if (currentMaterialId) {
-      const active = materials.find(m => m.id === currentMaterialId);
-      // Only update if the object in library is different or contains new data to avoid infinite loops
-      if (active && JSON.stringify(active) !== JSON.stringify(material)) {
-        setMaterial(active);
-      }
-      localStorage.setItem('echomaster_current_id', currentMaterialId);
-    }
-  }, [currentMaterialId, materials]);
+  const handleImmediateSave = async () => {
+    if (!material || !user) return;
+    
+    // 1. First sync current material to the list
+    const updatedMaterials = materials.map(m => 
+      m.id === material.id ? { ...material, lastModified: Date.now() } : m
+    );
+    setMaterials(updatedMaterials);
+    
+    // 2. Immediately trigger backend sync
+    await syncToBackend(updatedMaterials);
+  };
 
-  // Persistence: Sync library to backend whenever materials change
+  // Persistence: Auto sync library to backend whenever materials change
   useEffect(() => {
     if (!user || materials.length === 0) return;
 
-    const syncToBackend = async () => {
-      try {
-        await fetch(`${API_BASE}/api/materials/sync`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ materials, userId: user.id }),
-          mode: 'cors',
-          credentials: API_BASE ? 'include' : 'same-origin'
-        });
-        localStorage.setItem(`echomaster_library_${user.id}`, JSON.stringify(materials));
-      } catch (e: any) {
-        console.error("Backend Sync Error", e);
-      }
-    };
-    
-    const timer = setTimeout(syncToBackend, 2000);
+    // Use a longer debounce for auto-sync to avoid hitting rate limits
+    const timer = setTimeout(() => syncToBackend(materials), 10000); 
     return () => clearTimeout(timer);
   }, [materials, user]);
 
@@ -630,11 +654,18 @@ export default function App() {
                   </span>
                 )}
                 <button 
-                  onClick={() => setMaterials(prev => prev.map(m => m.id === material.id ? material : m))}
+                  onClick={handleImmediateSave}
                   className="btn-glass p-2.5 rounded-xl text-blue-400 hover:text-white transition-all group"
-                  title="同步到库"
+                  title="立即保存到云端"
                 >
                   <Save size={18} className="group-active:scale-95" />
+                </button>
+                <button 
+                  onClick={fetchLibrary}
+                  className="btn-glass p-2.5 rounded-xl text-green-400 hover:text-white transition-all group"
+                  title="从云端同步更新"
+                >
+                  <RotateCcw size={18} className="group-active:rotate-180 transition-transform duration-500" />
                 </button>
                 <div className="w-[1px] h-6 bg-white/10 mx-1" />
                 <button 
