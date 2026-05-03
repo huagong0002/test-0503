@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/ping",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/login",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/register",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/debug/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
