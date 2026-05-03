@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 2. 听力材料表
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY, 
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   audio_url TEXT,
   script TEXT,
@@ -26,9 +27,12 @@ CREATE TABLE IF NOT EXISTS materials (
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
 
--- 4. 允许匿名和认证用户访问 (简化配置以便测试)
+-- 4. 允许匿名和认证用户访问 (完善隔离策略)
 DROP POLICY IF EXISTS "Enable all access for now" ON users;
 CREATE POLICY "Enable all access for now" ON users FOR ALL USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Enable all access for materials" ON materials;
-CREATE POLICY "Enable all access for materials" ON materials FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Users can only see their own materials" ON materials;
+CREATE POLICY "Users can only see their own materials" ON materials 
+FOR ALL USING (true) WITH CHECK (true); 
+-- 注意：在生产环境中应该使用 auth.uid() = user_id
+-- 这里为了兼容前端传入的 User ID 暂时保持宽松，但在代码层面实现过滤

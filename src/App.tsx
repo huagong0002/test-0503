@@ -84,11 +84,16 @@ export default function App() {
 
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
-  // Persistence: Load library from backend on mount
+  // Persistence: Load library from backend on mount or user change
   useEffect(() => {
+    if (!user) {
+      setMaterials([]);
+      return;
+    }
+
     const fetchLibrary = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/materials`, {
+        const response = await fetch(`${API_BASE}/api/materials?userId=${user.id}`, {
           mode: 'cors',
           credentials: API_BASE ? 'include' : 'same-origin'
         });
@@ -98,57 +103,33 @@ export default function App() {
           const data = await response.json();
           if (Array.isArray(data)) {
             setMaterials(data);
-          } else {
-            console.error("Received non-array data for materials:", data);
-            setMaterials([]);
           }
-        } else {
-          const text = await response.text();
-          console.warn(`Library fetch failed - Status: ${response.status}, Content-Type: ${contentType}`);
-          throw new Error('Invalid response from server');
         }
       } catch (e: any) {
         console.error("Backend Library Load Error", e);
-        console.error(`Attempted URL: ${API_BASE || window.location.origin}/api/materials`);
-        // Fallback to localStorage if backend fails
-        const savedLibrary = localStorage.getItem('echomaster_library');
+        const savedLibrary = localStorage.getItem(`echomaster_library_${user.id}`);
         if (savedLibrary) setMaterials(JSON.parse(savedLibrary));
       }
     };
     
     fetchLibrary();
+  }, [user]);
 
-    // Debug: Check Backend Health
+  // Debug: Check Backend Health
+  useEffect(() => {
     const checkHealth = async () => {
       try {
         const checkUrl = `${API_BASE}/api/health`;
-        const res = await fetch(checkUrl, { 
-          mode: 'cors'
-        });
-        console.log(`Server health check: ${res.status} ${res.statusText}`);
+        const res = await fetch(checkUrl, { mode: 'cors' });
         if (res.ok) {
           const data = await res.json();
           console.log("Server health data:", data);
         }
       } catch (e) {
         console.error("Server health check FAILED.", e);
-        console.error(`Check URL: ${API_BASE || window.location.origin}/api/health`);
       }
     };
     checkHealth();
-    
-    // Load USER session from localStorage for serverless compatibility
-    const savedUser = localStorage.getItem('echomaster_user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error("Failed to parse saved user", e);
-      }
-    }
-    
-    const savedId = localStorage.getItem('echomaster_current_id');
-    if (savedId) setCurrentMaterialId(savedId);
   }, []);
 
   // Update effect for material selection
@@ -165,27 +146,26 @@ export default function App() {
 
   // Persistence: Sync library to backend whenever materials change
   useEffect(() => {
+    if (!user || materials.length === 0) return;
+
     const syncToBackend = async () => {
-      if (materials.length > 0) {
-        try {
-          await fetch(`${API_BASE}/api/materials/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ materials }),
-            mode: 'cors',
-            credentials: API_BASE ? 'include' : 'same-origin'
-          });
-          localStorage.setItem('echomaster_library', JSON.stringify(materials));
-        } catch (e: any) {
-          console.error("Backend Sync Error", e);
-          console.error(`Attempted sync URL: ${API_BASE || window.location.origin}/api/materials/sync`);
-        }
+      try {
+        await fetch(`${API_BASE}/api/materials/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ materials, userId: user.id }),
+          mode: 'cors',
+          credentials: API_BASE ? 'include' : 'same-origin'
+        });
+        localStorage.setItem(`echomaster_library_${user.id}`, JSON.stringify(materials));
+      } catch (e: any) {
+        console.error("Backend Sync Error", e);
       }
     };
     
     const timer = setTimeout(syncToBackend, 2000);
     return () => clearTimeout(timer);
-  }, [materials]);
+  }, [materials, user]);
 
   // Sync current material changes back to local materials list
   useEffect(() => {
@@ -235,9 +215,9 @@ export default function App() {
 
   const deleteMaterial = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm('确定要删除这个听力任务吗？（这将同步删除云端数据）')) {
+    if (user && window.confirm('确定要删除这个听力任务吗？（这将同步删除云端数据）')) {
       try {
-        await fetch(`${API_BASE}/api/materials/${id}`, { 
+        await fetch(`${API_BASE}/api/materials/${id}?userId=${user.id}`, { 
           method: 'DELETE',
           mode: 'cors',
           credentials: API_BASE ? 'include' : 'same-origin'
@@ -390,6 +370,21 @@ export default function App() {
         console.error("User session restore failed");
       }
     }
+  }, []);
+
+  // Check for saved user session and server health
+  useEffect(() => {
+    const savedUser = localStorage.getItem('echomaster_user');
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("User session restore failed");
+      }
+    }
+    
+    const savedId = localStorage.getItem('echomaster_current_id');
+    if (savedId) setCurrentMaterialId(savedId);
   }, []);
 
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);

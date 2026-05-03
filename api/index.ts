@@ -56,8 +56,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Fallbacks
-let LOCAL_STORE: any[] = [];
+// Fallbacks with User Isolation
+let LOCAL_STORE: Record<string, any[]> = {}; // Map of userId -> materials[]
 let LOCAL_USERS: any[] = [
   { id: '1', username: 'admin', password: 'admin123', email: 'admin@e-listen.com', role: 'admin' },
   { id: '2', username: 'tester', password: 'password', email: 'tester@example.com', role: 'user' }
@@ -191,42 +191,52 @@ app.all(['/api/login', '/login'], handleLogin);
 app.all(['/api/register', '/register'], handleRegister);
 
 app.get('/api/materials', async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId' });
+  }
+
   try {
     if (supabase) {
       const { data, error } = await supabase
         .from('materials')
         .select('*')
+        .eq('user_id', userId)
         .order('last_modified', { ascending: false });
       
       if (error) throw error;
       
-      // 映射数据库字段名为前端所需的驼峰式 (如果需要)
       const formatted = (data || []).map(m => ({
         id: m.id,
         title: m.title,
         audioUrl: m.audio_url,
         script: m.script,
         segments: m.segments || [],
-        lastModified: m.last_modified
+        lastModified: m.last_modified,
+        userId: m.user_id
       }));
       
       return res.json(formatted);
     }
   } catch (err: any) {
     console.error('Fetch Materials Error:', err.message);
-    if (err.message?.includes('relation "materials" does not exist') || err.message?.includes('cache lookup failed for relation')) {
+    if (err.message?.includes('relation "materials" does not exist')) {
       return res.status(500).json({ 
         error: '数据库表 "materials" 未找到。', 
-        suggestion: '请在 Supabase SQL Editor 中运行应用根目录下的 SETUP_SUPABASE.sql 脚本来创建必要的表格。',
-        details: err.message
+        suggestion: '请运行 SETUP_SUPABASE.sql。'
       });
     }
   }
-  res.json(LOCAL_STORE);
+  res.json(LOCAL_STORE[userId] || []);
 });
 
 app.post('/api/materials/sync', async (req, res) => {
-  const { materials } = req.body;
+  const { materials, userId } = req.body;
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId' });
+  }
+
   if (!Array.isArray(materials)) {
     return res.status(400).json({ error: 'Invalid materials data' });
   }
@@ -235,6 +245,7 @@ app.post('/api/materials/sync', async (req, res) => {
     if (supabase) {
       const records = materials.map(m => ({
         id: m.id,
+        user_id: userId,
         title: m.title || 'Untitled',
         audio_url: m.audioUrl,
         script: m.script || '',
@@ -246,38 +257,49 @@ app.post('/api/materials/sync', async (req, res) => {
         .from('materials')
         .upsert(records, { onConflict: 'id' });
 
-      if (error) {
-        console.error('Supabase Sync Error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return res.json({ success: true, count: materials.length, source: 'supabase' });
     }
   } catch (err: any) {
-    console.error('Sync Fallback triggered:', err.message);
+    console.error('Sync Error:', err.message);
   }
 
-  // Fallback to local memory if Supabase fails
+  // Fallback to local memory
+  if (!LOCAL_STORE[userId]) LOCAL_STORE[userId] = [];
+  
   materials.forEach(newM => {
-    const index = LOCAL_STORE.findIndex(m => m.id === newM.id);
+    const index = LOCAL_STORE[userId].findIndex(m => m.id === newM.id);
     if (index !== -1) {
-      if (newM.lastModified > LOCAL_STORE[index].lastModified) {
-        LOCAL_STORE[index] = newM;
+      if (newM.lastModified > LOCAL_STORE[userId][index].lastModified) {
+        LOCAL_STORE[userId][index] = { ...newM, userId };
       }
     } else {
-      LOCAL_STORE.push(newM);
+      LOCAL_STORE[userId].push({ ...newM, userId });
     }
   });
-  LOCAL_STORE.sort((a, b) => b.lastModified - a.lastModified);
-  res.json({ success: true, count: LOCAL_STORE.length, source: 'memory' });
+  
+  LOCAL_STORE[userId].sort((a, b) => b.lastModified - a.lastModified);
+  res.json({ success: true, count: LOCAL_STORE[userId].length, source: 'memory' });
 });
 
 app.delete('/api/materials/:id', async (req, res) => {
   const { id } = req.params;
-  if (supabase) {
-    await supabase.from('materials').delete().eq('id', id);
-  } else {
-    LOCAL_STORE = LOCAL_STORE.filter(m => m.id !== id);
+  const userId = req.query.userId as string;
+
+  try {
+    if (supabase) {
+      const query = supabase.from('materials').delete().eq('id', id);
+      if (userId) query.eq('user_id', userId);
+      await query;
+    }
+  } catch (e) {
+    console.error('Delete Error:', e);
   }
+
+  if (userId && LOCAL_STORE[userId]) {
+    LOCAL_STORE[userId] = LOCAL_STORE[userId].filter(m => m.id !== id);
+  }
+  
   res.json({ success: true });
 });
 
