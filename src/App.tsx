@@ -92,6 +92,8 @@ export default function App() {
     
     try {
       setLastSaved('同步中...');
+      console.log(`[Sync] Starting sync for ${dataToSync.length} materials, userId: ${user.id}`);
+      
       const response = await fetch(`${API_BASE}/api/materials/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,13 +103,21 @@ export default function App() {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('[Sync] Response:', result);
         localStorage.setItem(`echomaster_library_shared`, JSON.stringify(dataToSync));
-        setLastSaved(new Date().toLocaleTimeString());
+        if (result.errors && result.errors.length > 0) {
+          setLastSaved(`部分同步: ${result.count}/${result.total}`);
+        } else {
+          setLastSaved(new Date().toLocaleTimeString());
+        }
       } else {
+        const errorData = await response.json().catch(() => null);
+        console.error('[Sync] Failed:', errorData || response.statusText);
         setLastSaved('同步失败');
       }
     } catch (e: any) {
-      console.error("Backend Sync Error", e);
+      console.error("[Sync] Network Error", e);
       setLastSaved('网络异常');
     }
   };
@@ -240,8 +250,9 @@ export default function App() {
       segments: [],
       lastModified: Date.now(),
       userId: user.id,
-      creatorUsername: user.username
+      creatorUsername: user.username || user.id
     };
+    console.log('[Create] New material by:', user.username || user.id);
     setMaterials(prev => [newMaterial, ...prev]);
     setCurrentMaterialId(newMaterial.id);
     setMode('setup');
@@ -435,11 +446,29 @@ export default function App() {
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [syncScroll, setSyncScroll] = useState(true);
 
-  // 权限检查：所有用户都可以编辑
+  // 权限检查：根据模式和用户角色判断编辑权限
   const canEdit = useMemo(() => {
-    // 只要用户已登录就可以编辑
-    return !!user;
-  }, [user]);
+    if (!user) return false;
+    
+    // 设置模块：所有登录用户都可以编辑（用于上传音频）
+    if (mode === 'setup') {
+      return true;
+    }
+    
+    // 管理员始终可以编辑
+    if (user.role === 'admin') {
+      return true;
+    }
+    
+    // 库文件和分段模块：只有创建者可以编辑
+    if (mode === 'library' || mode === 'edit') {
+      const currentMat = materials.find(m => m.id === currentMaterialId) || material;
+      return currentMat.creatorUsername === user.username;
+    }
+    
+    // 训练模式：只读
+    return false;
+  }, [user, mode, materials, currentMaterialId, material]);
 
   const [editingSegmentIndex, setEditingSegmentIndex] = useState<number>(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -933,8 +962,9 @@ export default function App() {
                             <span className="flex items-center gap-1"><Calendar size={12} /> {m.lastModified ? new Date(m.lastModified).toLocaleDateString() : '未知时间'}</span>
                           </div>
                           {m.creatorUsername && (
-                            <div className="flex items-center gap-1 mt-1 text-xs text-blue-400 font-medium">
-                              <User size={12} /> {m.creatorUsername}
+                            <div className="flex items-center gap-1.5 mt-2 px-2 py-1 bg-blue-500/10 rounded-lg">
+                              <User size={12} className="text-blue-400" />
+                              <span className="text-xs font-bold text-blue-400">创建者: {m.creatorUsername}</span>
                             </div>
                           )}
                         </div>
