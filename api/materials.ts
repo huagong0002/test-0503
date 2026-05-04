@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mappedData = data.map((item: any) => ({
         id: item.id,
         userId: item.user_id,
-        creatorUsername: item.creator_username || null,
+        // creatorUsername: item.creator_username || null, (暂时禁用)
         title: item.title,
         audioUrl: item.audio_url,
         script: item.script,
@@ -89,16 +89,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        const record = {
+        // 构建最小化记录 - 只使用绝对必要的字段
+        const record: any = {
           id: material.id,
           user_id: material.userId || userId,
-          creator_username: material.creatorUsername || userId,
           title: material.title || '未命名资料',
           audio_url: material.audioUrl || '',
           script: material.script || '',
           segments: material.segments || [],
           last_modified: material.lastModified || Date.now()
         };
+        
+        // 暂时禁用 creator_username，避免列缺失错误
+        // 我们可以稍后再添加这个功能
+        // if (material.creatorUsername) {
+        //   record.creator_username = material.creatorUsername;
+        // } else if (userId) {
+        //   record.creator_username = userId;
+        // }
 
         try {
           console.log(`🔄 Processing material: ${material.id} - ${material.title}`);

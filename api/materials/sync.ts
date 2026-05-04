@@ -58,16 +58,24 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      const record = {
+      // 构建最小化记录 - 只使用绝对必要的字段
+      const record: any = {
         id: mat.id,
         user_id: mat.userId || userId,
-        creator_username: mat.creatorUsername || userId,
         title: mat.title || '未命名',
         audio_url: mat.audioUrl || '',
         script: mat.script || '',
         segments: mat.segments || [],
         last_modified: mat.lastModified || Date.now()
       };
+      
+      // 暂时禁用 creator_username，避免列缺失错误
+      // 我们可以稍后再添加这个功能
+      // if (mat.creatorUsername) {
+      //   record.creator_username = mat.creatorUsername;
+      // } else if (userId) {
+      //   record.creator_username = userId;
+      // }
 
       try {
         console.log(`🔄 Processing material: ${mat.id} - ${mat.title}`);
