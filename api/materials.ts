@@ -76,32 +76,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, count: 0 });
       }
 
-      const records = materials.map((m: any) => ({
-        id: m.id,
-        user_id: m.userId || userId,
-        creator_username: m.creatorUsername || userId,
-        title: m.title || '未命名资料',
-        audio_url: m.audioUrl || '',
-        script: m.script || '',
-        segments: m.segments || [],
-        last_modified: m.lastModified || Date.now()
-      }));
+      // 逐个处理材料，避免 PGRST204 错误
+      let successCount = 0;
+      for (const material of materials) {
+        const record = {
+          id: material.id,
+          user_id: material.userId || userId,
+          creator_username: material.creatorUsername || userId,
+          title: material.title || '未命名资料',
+          audio_url: material.audioUrl || '',
+          script: material.script || '',
+          segments: material.segments || [],
+          last_modified: material.lastModified || Date.now()
+        };
 
-      console.log(`📝 Preparing to upsert ${records.length} records`);
-      
-      // 修复：添加 .select() 确保 upsert 返回数据
-      const { data, error } = await supabase
-        .from('materials')
-        .upsert(records, { onConflict: 'id' })
-        .select();
+        try {
+          // 先尝试更新
+          const { error: updateError } = await supabase
+            .from('materials')
+            .update(record)
+            .eq('id', material.id);
 
-      if (error) {
-        console.error('❌ Supabase upsert error:', error);
-        throw error;
+          if (updateError) {
+            // 如果更新失败，尝试插入
+            const { error: insertError } = await supabase
+              .from('materials')
+              .insert(record);
+
+            if (insertError) {
+              console.error(`❌ Failed to process material ${material.id}:`, insertError);
+            } else {
+              successCount++;
+            }
+          } else {
+            successCount++;
+          }
+        } catch (err) {
+          console.error(`❌ Error processing material ${material.id}:`, err);
+        }
       }
 
-      console.log(`✅ Successfully synced ${data?.length || records.length} materials`);
-      return res.json({ success: true, count: data?.length || records.length });
+      console.log(`✅ Successfully synced ${successCount} out of ${materials.length} materials`);
+      return res.json({ success: true, count: successCount });
     }
 
     res.status(405).json({ error: 'Method not allowed' });
