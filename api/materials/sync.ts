@@ -7,10 +7,10 @@ export default async function handler(req: any, res: any) {
 
     const { materials, userId } = req.body;
 
-    console.log(`=== SYNC REQUEST ===`);
+    console.log(`=== SYNC REQUEST START ===`);
+    console.log(`Timestamp: ${new Date().toISOString()}`);
     console.log(`User ID: ${userId}`);
     console.log(`Materials count: ${materials?.length || 0}`);
-    console.log(`Request body keys: ${Object.keys(req.body || {})}`);
 
     if (!userId) {
       console.error('❌ Missing userId');
@@ -18,22 +18,33 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!materials || !Array.isArray(materials)) {
-      console.error('❌ materials is not an array:', materials);
+      console.error('❌ materials is not an array');
       return res.status(400).json({ error: 'materials必须是数组' });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_KEY;
+    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY;
+
+    console.log(`Supabase URL configured: ${!!supabaseUrl}`);
+    console.log(`Supabase Key configured: ${!!supabaseKey}`);
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('❌ Supabase credentials not configured');
-      return res.status(500).json({ error: '数据库配置未完成' });
+      return res.status(500).json({ 
+        error: '数据库配置未完成',
+        details: 'SUPABASE_URL 或 SUPABASE_KEY 环境变量未配置'
+      });
     }
 
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    console.log('✅ Supabase client created successfully');
+    let supabase;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      supabase = createClient(supabaseUrl, supabaseKey);
+      console.log('✅ Supabase client created successfully');
+    } catch (clientError) {
+      console.error('❌ Failed to create Supabase client:', clientError);
+      return res.status(500).json({ error: '创建数据库客户端失败', details: clientError.message });
+    }
 
     let success = 0;
     let failed = 0;
@@ -41,7 +52,7 @@ export default async function handler(req: any, res: any) {
 
     for (const mat of materials) {
       if (!mat.id) {
-        console.error('❌ Material missing ID:', mat);
+        console.error('❌ Material missing ID');
         failed++;
         errors.push('材料缺少ID');
         continue;
@@ -74,9 +85,16 @@ export default async function handler(req: any, res: any) {
             .insert(record);
 
           if (insertError) {
-            console.error(`❌ Insert failed for ${mat.id}:`, insertError);
+            console.error(`❌ Insert failed for ${mat.id}:`);
+            console.error(`   Code: ${insertError.code}`);
+            console.error(`   Message: ${insertError.message}`);
+            console.error(`   Hint: ${insertError.hint}`);
+            
             failed++;
-            errors.push(`材料 ${mat.id}: ${insertError.message}`);
+            const errorMsg = insertError.code === '23505' 
+              ? `主键冲突: 材料ID ${mat.id} 已存在`
+              : `材料 ${mat.id}: ${insertError.message}`;
+            errors.push(errorMsg);
           } else {
             console.log(`✅ Inserted material: ${mat.id}`);
             success++;
@@ -86,7 +104,8 @@ export default async function handler(req: any, res: any) {
           success++;
         }
       } catch (err: any) {
-        console.error(`❌ Error processing material ${mat.id}:`, err);
+        console.error(`❌ Exception processing material ${mat.id}:`);
+        console.error(`   Error:`, err);
         failed++;
         errors.push(`材料 ${mat.id}: ${err.message}`);
       }
@@ -106,6 +125,10 @@ export default async function handler(req: any, res: any) {
     
   } catch (err: any) {
     console.error('💥 Handler error:', err);
-    return res.status(500).json({ error: err.message });
+    console.error('💥 Error stack:', err.stack);
+    return res.status(500).json({ 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 }

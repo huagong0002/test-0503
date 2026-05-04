@@ -106,19 +106,26 @@ export default function App() {
         const result = await response.json();
         console.log('[Sync] Response:', result);
         localStorage.setItem(`echomaster_library_shared`, JSON.stringify(dataToSync));
+        
         if (result.errors && result.errors.length > 0) {
-          setLastSaved(`部分同步: ${result.count}/${result.total}`);
-        } else {
+          console.error('[Sync] Errors:', result.errors);
+          setLastSaved(`同步失败: ${result.errors.join('; ')}`);
+          alert(`同步失败:\n${result.errors.join('\n')}`);
+        } else if (result.success) {
           setLastSaved(new Date().toLocaleTimeString());
+        } else {
+          setLastSaved(`部分同步: ${result.count}/${result.total}`);
         }
       } else {
         const errorData = await response.json().catch(() => null);
         console.error('[Sync] Failed:', errorData || response.statusText);
         setLastSaved('同步失败');
+        alert(`同步失败: ${errorData?.error || response.statusText}`);
       }
     } catch (e: any) {
       console.error("[Sync] Network Error", e);
       setLastSaved('网络异常');
+      alert(`网络异常: ${e.message}`);
     }
   };
 
