@@ -84,6 +84,7 @@ export default function App() {
   });
 
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [justDeleted, setJustDeleted] = useState(false);
 
   // Persistence: Sync library to backend manual trigger
     const syncToBackend = async (dataToSync = materials) => {
@@ -187,12 +188,15 @@ export default function App() {
 
   // Persistence: Auto sync library to backend whenever materials change
   useEffect(() => {
-    if (!user || materials.length === 0) return;
+    if (!user || materials.length === 0 || justDeleted) {
+      if (justDeleted) setJustDeleted(false);
+      return;
+    }
 
     // Use a longer debounce for auto-sync to avoid hitting rate limits
     const timer = setTimeout(() => syncToBackend(materials), 10000); 
     return () => clearTimeout(timer);
-  }, [materials, user]);
+  }, [materials, user, justDeleted]);
 
   // Sync current material changes back to local materials list
   useEffect(() => {
@@ -258,6 +262,7 @@ export default function App() {
           credentials: API_BASE ? 'include' : 'same-origin'
         });
         if (response.ok) {
+          setJustDeleted(true);
           setMaterials(prev => {
             const updated = prev.filter(m => m.id !== id);
             localStorage.setItem(`echomaster_library_shared`, JSON.stringify(updated));
