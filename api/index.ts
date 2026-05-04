@@ -234,15 +234,17 @@ app.post('/api/materials/sync', async (req: Request, res: Response) => {
 
   try {
     // --- 精准映射：前端对象 -> 数据库列名 ---
-    const records = materials.map((m: any) => ({
-      id: m.id,                       // 对应数据库 id (text)
-      user_id: m.userId || userId,    // 对应数据库 user_id (text)
-      title: m.title || '未命名资料',  // 对应数据库 title (text)
-      audio_url: m.audioUrl || '',    // 对应数据库 audio_url (text)
-      script: m.script || '',         // 对应数据库 script (text)
-      segments: m.segments || [],     // 对应数据库 segments (jsonb)
-      last_modified: m.lastModified || Date.now() // 对应数据库 last_modified (int8)
-    }));
+// api/index.ts 同步接口部分的加固修改
+  const records = materials.map((m: any) => ({
+    id: m.id,
+    user_id: userId,
+    title: m.title || 'Untitled',
+    audio_url: m.audioUrl || '',
+    script: m.script || '',
+    segments: Array.isArray(m.segments) ? m.segments : [],
+  // 关键：强制转换为字符串，以匹配你修改后的数据库 text 类型
+    last_modified: String(m.lastModified || Date.now()) 
+  }));
 
     console.log(`准备同步 ${records.length} 条数据到 Supabase...`);
 
