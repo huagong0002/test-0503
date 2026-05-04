@@ -61,6 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mappedData = data.map((item: any) => ({
         id: item.id,
         userId: item.user_id,
+        creatorUsername: item.creator_username,
         title: item.title,
         audioUrl: item.audio_url,
         script: item.script,
@@ -108,6 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const record: any = {
           id: material.id,
           user_id: material.userId || userId,
+          creator_username: material.creatorUsername || userId,
           title: material.title || '未命名资料',
           audio_url: material.audioUrl || '',
           script: material.script || '',

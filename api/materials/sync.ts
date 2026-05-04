@@ -78,6 +78,7 @@ export default async function handler(req: any, res: any) {
       const record: any = {
         id: mat.id,
         user_id: mat.userId || userId,
+        creator_username: mat.creatorUsername || userId,
         title: mat.title || '未命名',
         audio_url: mat.audioUrl || '',
         script: mat.script || '',

@@ -291,8 +291,8 @@ export default function App() {
       script: '',
       segments: [],
       lastModified: Date.now(),
-      userId: user.id
-      // creatorUsername: user.username || user.id (暂时禁用)
+      userId: user.id,
+      creatorUsername: user.username || user.id
     };
     console.log('[Create] New material by:', user.username || user.id);
     setMaterials(prev => [newMaterial, ...prev]);
@@ -488,7 +488,7 @@ export default function App() {
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [syncScroll, setSyncScroll] = useState(true);
 
-  // 权限检查：简化版本（暂时移除 creatorUsername 依赖）
+  // 权限检查
   const canEdit = useMemo(() => {
     if (!user) return false;
     
@@ -502,17 +502,15 @@ export default function App() {
       return true;
     }
     
-    // 暂时：所有用户都可以编辑（之后可以再添加 creatorUsername 列后恢复限制）
-    return true;
+    // 库文件和分段模块：只有创建者可以编辑
+    if (mode === 'library' || mode === 'edit') {
+      const currentMat = materials.find(m => m.id === currentMaterialId) || material;
+      return currentMat.creatorUsername === user.username;
+    }
     
-    // 等数据库添加 creator_username 列后，再启用这个：
-    // if (mode === 'library' || mode === 'edit') {
-    //   const currentMat = materials.find(m => m.id === currentMaterialId) || material;
-    //   return currentMat.creatorUsername === user.username;
-    // }
-    // 
-    // return false;
-  }, [user, mode]);
+    // 训练模式：只读
+    return false;
+  }, [user, mode, materials, currentMaterialId, material]);
 
   const [editingSegmentIndex, setEditingSegmentIndex] = useState<number>(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -1005,14 +1003,12 @@ export default function App() {
                             <span className="flex items-center gap-1"><Clock size={12} /> {m.segments.length}个分段</span>
                             <span className="flex items-center gap-1"><Calendar size={12} /> {formatDate(m.lastModified)}</span>
                           </div>
-                          {/* 暂时禁用 creatorUsername 显示，等数据库添加列后恢复
                           {m.creatorUsername && (
                             <div className="flex items-center gap-1.5 mt-2 px-2 py-1 bg-blue-500/10 rounded-lg">
                               <User size={12} className="text-blue-400" />
                               <span className="text-xs font-bold text-blue-400">创建者: {m.creatorUsername}</span>
                             </div>
                           )}
-                          */}
                         </div>
 
                         <div className="pt-4 mt-auto border-t border-white/5 flex items-center justify-between">
