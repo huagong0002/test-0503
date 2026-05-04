@@ -249,12 +249,6 @@ export default function App() {
 
   const deleteMaterial = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const targetMaterial = materials.find(m => m.id === id);
-    const isOwnerOrAdmin = user?.role === 'admin' || user?.username === 'admin' || targetMaterial?.userId === user?.id;
-    if (!isOwnerOrAdmin) {
-      alert('权限不足：只有管理员或创建者可以删除此项');
-      return;
-    }
     if (user && window.confirm('确定要删除这个听力任务吗？（这将同步从云端库中移除）')) {
       try {
         const response = await fetch(`${API_BASE}/api/materials/${id}?username=${user.username}`, { 
@@ -441,14 +435,11 @@ export default function App() {
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [syncScroll, setSyncScroll] = useState(true);
 
-  // 权限检查：只有管理员或创建者可以编辑
+  // 权限检查：所有用户都可以编辑
   const canEdit = useMemo(() => {
-    if (!user || !material) return false;
-    // 管理员始终有权
-    if (user.username === 'admin' || user.role === 'admin') return true;
-    // 任务创建者有权
-    return material.userId === user.id;
-  }, [user, material]);
+    // 只要用户已登录就可以编辑
+    return !!user;
+  }, [user]);
 
   const [editingSegmentIndex, setEditingSegmentIndex] = useState<number>(0);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -912,11 +903,11 @@ export default function App() {
                                 <Upload size={18} />
                               </label>
                             )}
-                            {(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') && (
+                            {user && (
                               <button 
                                 onClick={(e) => deleteMaterial(e, m.id)}
                                 className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
-                                title="删除任务 (仅创建者或管理员)"
+                                title="删除任务"
                               >
                                 <Trash2 size={18} />
                               </button>
@@ -929,17 +920,12 @@ export default function App() {
                             onClick={(e) => e.stopPropagation()}
                             value={m.title}
                             onChange={(e) => {
-                              const canEditThis = (user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin');
-                              if (!canEditThis) return;
                               const newTitle = e.target.value;
                               setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, title: newTitle, lastModified: Date.now() } : item));
                             }}
-                            disabled={!(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin')}
                             className={cn(
                               "text-lg font-bold bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded px-1 -ml-1 w-full transition-colors",
-                              (user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') 
-                                ? "text-white hover:bg-white/5 group-hover:text-blue-400 cursor-text" 
-                                : "text-slate-500 cursor-default"
+                              "text-white hover:bg-white/5 group-hover:text-blue-400 cursor-text"
                             )}
                           />
                           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-medium">
@@ -978,16 +964,7 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="max-w-2xl mx-auto space-y-8"
             >
-              <div className="glass p-10 rounded-[32px] space-y-8 relative">
-                {!canEdit && material.id !== 'demo-1' && (
-                  <div className="absolute inset-0 z-20 bg-black/40 backdrop-blur-[2px] flex items-center justify-center rounded-[32px]">
-                    <div className="glass p-6 rounded-2xl border-white/20 text-center space-y-3">
-                      <Lock size={32} className="mx-auto text-amber-500" />
-                      <p className="text-white font-bold">只读模式</p>
-                      <p className="text-slate-300 text-xs">您没有修改此材料参数的权限</p>
-                    </div>
-                  </div>
-                )}
+              <div className="glass p-10 rounded-[32px] space-y-8">
                 <div className="space-y-2">
                   <h2 className="text-3xl font-bold text-white">开始新的听力任务</h2>
                   <p className="text-slate-400 text-sm">上传音频文件并粘贴听力脚本。包含 [00:15] 格式标记可自动分段。</p>
