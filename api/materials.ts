@@ -109,7 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const record: any = {
           id: material.id,
           user_id: material.userId || userId,
-          creator_username: material.creatorUsername || userId,
+          creator_username: material.creatorUsername || '未知用户',
           title: material.title || '未命名资料',
           audio_url: material.audioUrl || '',
           script: material.script || '',

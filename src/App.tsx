@@ -292,13 +292,34 @@ export default function App() {
       segments: [],
       lastModified: Date.now(),
       userId: user.id,
-      creatorUsername: user.username || user.id
+      creatorUsername: getUsername(user)
     };
-    console.log('[Create] New material by:', user.username || user.id);
+    console.log('[Create] New material by:', getUsername(user));
     setMaterials(prev => [newMaterial, ...prev]);
     setCurrentMaterialId(newMaterial.id);
     setMode('setup');
   };
+  
+  function getUsername(user: UserType | null): string {
+    if (!user) return '未知用户';
+    // 优先使用 username 字段
+    if (user.username && typeof user.username === 'string' && user.username.length > 0 && user.username !== '0' && user.username !== '1') {
+      return user.username;
+    }
+    // 其次尝试其他可能的字段
+    const possibleNames = [user.email, user.name, user.displayName];
+    for (const name of possibleNames) {
+      if (name && typeof name === 'string' && name.length > 0) {
+        // 如果是邮箱，只取 @ 前面的部分
+        if (name.includes('@')) {
+          return name.split('@')[0];
+        }
+        return name;
+      }
+    }
+    // 最后的 fallback
+    return '用户';
+  }
 
   const deleteMaterial = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -505,7 +526,7 @@ export default function App() {
     // 库文件和分段模块：只有创建者可以编辑
     if (mode === 'library' || mode === 'edit') {
       const currentMat = materials.find(m => m.id === currentMaterialId) || material;
-      return currentMat.creatorUsername === user.username;
+      return currentMat.creatorUsername === getUsername(user);
     }
     
     // 训练模式：只读
