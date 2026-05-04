@@ -12,7 +12,7 @@ type VercelResponse = {
 };
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || '';
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`=== ${req.method} /api/materials ===`);
@@ -76,9 +76,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ success: true, count: 0 });
       }
 
-      // 逐个处理材料，避免 PGRST204 错误
+      // 逐个处理材料
       let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
+      
       for (const material of materials) {
+        if (!material.id) {
+          console.error('❌ Material missing ID');
+          failedCount++;
+          errors.push('材料缺少ID');
+          continue;
+        }
+
         const record = {
           id: material.id,
           user_id: material.userId || userId,
@@ -91,33 +101,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
 
         try {
-          // 先尝试更新
-          const { error: updateError } = await supabase
+          console.log(`🔄 Processing material: ${material.id} - ${material.title}`);
+          
+          // 首先检查该记录是否存在
+          const { data: existingRecords, error: fetchError } = await supabase
             .from('materials')
-            .update(record)
+            .select('id')
             .eq('id', material.id);
 
-          if (updateError) {
-            // 如果更新失败，尝试插入
+          if (fetchError) {
+            console.error(`❌ Failed to check material ${material.id}:`, fetchError);
+            failedCount++;
+            errors.push(`检查材料 ${material.id} 失败: ${fetchError.message}`);
+            continue;
+          }
+
+          const exists = existingRecords && existingRecords.length > 0;
+          console.log(`   Material exists: ${exists}`);
+
+          if (exists) {
+            // 记录存在，进行更新
+            console.log(`   Updating existing material`);
+            const { error: updateError } = await supabase
+              .from('materials')
+              .update(record)
+              .eq('id', material.id);
+
+            if (updateError) {
+              console.error(`❌ Update failed for ${material.id}:`, updateError);
+              failedCount++;
+              errors.push(`更新材料 ${material.id} 失败: ${updateError.message}`);
+            } else {
+              console.log(`✅ Updated material: ${material.id}`);
+              successCount++;
+            }
+          } else {
+            // 记录不存在，进行插入
+            console.log(`   Inserting new material`);
             const { error: insertError } = await supabase
               .from('materials')
               .insert(record);
 
             if (insertError) {
-              console.error(`❌ Failed to process material ${material.id}:`, insertError);
+              console.error(`❌ Insert failed for ${material.id}:`);
+              console.error(`   Code: ${insertError.code}`);
+              console.error(`   Message: ${insertError.message}`);
+              
+              failedCount++;
+              const errorMsg = insertError.code === '23505' 
+                ? `主键冲突: 材料ID ${material.id} 已存在`
+                : `插入材料 ${material.id} 失败: ${insertError.message}`;
+              errors.push(errorMsg);
             } else {
+              console.log(`✅ Inserted material: ${material.id}`);
               successCount++;
             }
-          } else {
-            successCount++;
           }
-        } catch (err) {
-          console.error(`❌ Error processing material ${material.id}:`, err);
+        } catch (err: any) {
+          console.error(`❌ Exception processing material ${material.id}:`);
+          console.error(`   Error:`, err);
+          failedCount++;
+          errors.push(`处理材料 ${material.id} 异常: ${err.message}`);
         }
       }
 
-      console.log(`✅ Successfully synced ${successCount} out of ${materials.length} materials`);
-      return res.json({ success: true, count: successCount });
+      console.log(`✅ Sync complete: ${successCount} succeeded, ${failedCount} failed out of ${materials.length}`);
+      return res.json({ 
+        success: failedCount === 0, 
+        count: successCount, 
+        total: materials.length,
+        failed: failedCount,
+        errors: errors.length > 0 ? errors : undefined
+      });
     }
 
     res.status(405).json({ error: 'Method not allowed' });

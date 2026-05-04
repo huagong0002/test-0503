@@ -72,14 +72,41 @@ export default async function handler(req: any, res: any) {
       try {
         console.log(`🔄 Processing material: ${mat.id} - ${mat.title}`);
         
-        const { error: updateError } = await supabase
+        // 首先检查该记录是否存在
+        const { data: existingRecords, error: fetchError } = await supabase
           .from('materials')
-          .update(record)
+          .select('id')
           .eq('id', mat.id);
 
-        if (updateError) {
-          console.log(`ℹ️ Update failed, trying insert: ${updateError.message}`);
-          
+        if (fetchError) {
+          console.error(`❌ Failed to check material ${mat.id}:`, fetchError);
+          failed++;
+          errors.push(`检查材料 ${mat.id} 失败: ${fetchError.message}`);
+          continue;
+        }
+
+        const exists = existingRecords && existingRecords.length > 0;
+        console.log(`   Material exists: ${exists}`);
+
+        if (exists) {
+          // 记录存在，进行更新
+          console.log(`   Updating existing material`);
+          const { error: updateError } = await supabase
+            .from('materials')
+            .update(record)
+            .eq('id', mat.id);
+
+          if (updateError) {
+            console.error(`❌ Update failed for ${mat.id}:`, updateError);
+            failed++;
+            errors.push(`更新材料 ${mat.id} 失败: ${updateError.message}`);
+          } else {
+            console.log(`✅ Updated material: ${mat.id}`);
+            success++;
+          }
+        } else {
+          // 记录不存在，进行插入
+          console.log(`   Inserting new material`);
           const { error: insertError } = await supabase
             .from('materials')
             .insert(record);
@@ -93,21 +120,18 @@ export default async function handler(req: any, res: any) {
             failed++;
             const errorMsg = insertError.code === '23505' 
               ? `主键冲突: 材料ID ${mat.id} 已存在`
-              : `材料 ${mat.id}: ${insertError.message}`;
+              : `插入材料 ${mat.id} 失败: ${insertError.message}`;
             errors.push(errorMsg);
           } else {
             console.log(`✅ Inserted material: ${mat.id}`);
             success++;
           }
-        } else {
-          console.log(`✅ Updated material: ${mat.id}`);
-          success++;
         }
       } catch (err: any) {
         console.error(`❌ Exception processing material ${mat.id}:`);
         console.error(`   Error:`, err);
         failed++;
-        errors.push(`材料 ${mat.id}: ${err.message}`);
+        errors.push(`处理材料 ${mat.id} 异常: ${err.message}`);
       }
     }
 
