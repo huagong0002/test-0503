@@ -15,28 +15,34 @@
   ],
   "routes": [
     {
-      "src": "/api/health",
-      "dest": "/api/health.ts"
-    },
-    {
-      "src": "/api/login",
-      "dest": "/api/login.ts"
-    },
-    {
-      "src": "/api/register",
-      "dest": "/api/register.ts"
-    },
-    {
       "src": "/api/materials/sync",
-      "dest": "/api/materials/sync.ts"
+      "dest": "/api/materials/sync.ts",
+      "methods": ["POST"]
     },
     {
       "src": "/api/materials",
-      "dest": "/api/materials.ts"
+      "dest": "/api/materials.ts",
+      "methods": ["GET"]
     },
     {
       "src": "/api/materials/(.*)",
-      "dest": "/api/materials/[id].ts"
+      "dest": "/api/materials/[id].ts",
+      "methods": ["DELETE"]
+    },
+    {
+      "src": "/api/health",
+      "dest": "/api/health.ts",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/api/login",
+      "dest": "/api/login.ts",
+      "methods": ["POST"]
+    },
+    {
+      "src": "/api/register",
+      "dest": "/api/register.ts",
+      "methods": ["POST"]
     },
     {
       "src": "/(.*)",
