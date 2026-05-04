@@ -1,5 +1,15 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+
+type VercelRequest = {
+  method: string;
+  body: any;
+  query: Record<string, string | string[]>;
+};
+
+type VercelResponse = {
+  status: (code: number) => VercelResponse;
+  json: (data: any) => void;
+};
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_KEY || '';
