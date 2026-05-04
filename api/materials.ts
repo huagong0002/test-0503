@@ -120,50 +120,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           console.log(`🔄 Processing material: ${material.id} - ${material.title}`);
           
-          const { data: existingRecords, error: fetchError } = await supabase
+          // 策略：先尝试更新，如果没有更新任何行，再尝试插入
+          console.log(`   First trying to update...`);
+          const { error: updateError, status } = await supabase
             .from('materials')
-            .select('id')
-            .eq('id', material.id);
+            .update(record)
+            .eq('id', material.id)
+            .select();
 
-          if (fetchError) {
-            console.error(`❌ Failed to check material ${material.id}:`, fetchError);
-            failedCount++;
-            errors.push(`检查材料 ${material.id} 失败: ${fetchError.message}`);
+          if (!updateError && status === 200) {
+            console.log(`   ✅ Updated successfully`);
+            successCount++;
             continue;
           }
 
-          const exists = existingRecords && existingRecords.length > 0;
-          console.log(`   Material exists: ${exists}`);
+          // 更新失败或没有更新任何行，尝试插入
+          console.log(`   Update failed or no rows affected, trying to insert...`);
+          const { error: insertError } = await supabase
+            .from('materials')
+            .insert(record);
 
-          if (exists) {
-            console.log(`   Updating existing material`);
-            const { error: updateError } = await supabase
+          if (!insertError) {
+            console.log(`   ✅ Inserted successfully`);
+            successCount++;
+          } else if (insertError.code === '23505') {
+            // 主键冲突，说明记录已存在，再次尝试更新
+            console.log(`   🔄 Primary key conflict, retrying update...`);
+            const { error: retryUpdateError } = await supabase
               .from('materials')
               .update(record)
-              .eq('id', material.id);
+              .eq('id', material.id)
+              .select();
 
-            if (updateError) {
-              console.error(`❌ Update failed for ${material.id}:`, updateError);
-              failedCount++;
-              errors.push(`更新材料 ${material.id} 失败: ${updateError.message}`);
-            } else {
-              console.log(`   ✅ Updated successfully`);
+            if (!retryUpdateError) {
+              console.log(`   ✅ Retry update successful`);
               successCount++;
+            } else {
+              console.error(`❌ Retry update failed for ${material.id}:`, retryUpdateError);
+              failedCount++;
+              errors.push(`主键冲突后重试更新失败: ${retryUpdateError.message}`);
             }
           } else {
-            console.log(`   Inserting new material`);
-            const { error: insertError } = await supabase
-              .from('materials')
-              .insert(record);
-
-            if (insertError) {
-              console.error(`❌ Insert failed for ${material.id}:`, insertError);
-              failedCount++;
-              errors.push(`插入材料 ${material.id} 失败: ${insertError.message}`);
-            } else {
-              console.log(`   ✅ Inserted successfully`);
-              successCount++;
-            }
+            console.error(`❌ Insert failed for ${material.id}:`, insertError);
+            failedCount++;
+            errors.push(`插入材料 ${material.id} 失败: ${insertError.message}`);
           }
         } catch (err: any) {
           console.error(`💥 Exception for ${material.id}:`, err);
