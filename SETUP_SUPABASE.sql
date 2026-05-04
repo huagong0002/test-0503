@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 2. 听力材料表
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY, 
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT, -- Use TEXT instead of UUID for flexibility
   title TEXT NOT NULL,
   audio_url TEXT,
   script TEXT,
