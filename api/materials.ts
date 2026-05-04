@@ -89,17 +89,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       console.log(`📝 Preparing to upsert ${records.length} records`);
       
-      const { error } = await supabase
+      // 修复：添加 .select() 确保 upsert 返回数据
+      const { data, error } = await supabase
         .from('materials')
-        .upsert(records, { onConflict: 'id' });
+        .upsert(records, { onConflict: 'id' })
+        .select();
 
       if (error) {
         console.error('❌ Supabase upsert error:', error);
         throw error;
       }
 
-      console.log(`✅ Successfully synced ${records.length} materials`);
-      return res.json({ success: true, count: records.length });
+      console.log(`✅ Successfully synced ${data?.length || records.length} materials`);
+      return res.json({ success: true, count: data?.length || records.length });
     }
 
     res.status(405).json({ error: 'Method not allowed' });
