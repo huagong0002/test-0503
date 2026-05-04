@@ -1,0 +1,12 @@
+# 不需要复制到 Docker 镜像中的文件
+node_modules
+npm-debug.log
+dist
+build
+coverage
+.env
+.env.local
+.DS_Store
+*.log
+.git
+.gitignore
