@@ -28,7 +28,7 @@
     },
     {
       "src": "/api/materials/sync",
-      "dest": "/api/materials.ts"
+      "dest": "/api/materials/sync.ts"
     },
     {
       "src": "/api/materials",
