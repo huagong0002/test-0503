@@ -15,7 +15,7 @@ const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_KEY || '';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  console.log(`=== ${req.method} /api/materials/sync ===`);
+  console.log('=== POST /api/materials/sync ===');
   
   try {
     if (req.method !== 'POST') {
@@ -24,36 +24,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { materials, userId } = req.body;
     
-    console.log(`📤 Sync request received: userId=${userId}, materials count=${materials?.length || 0}`);
+    console.log('📤 Sync request:', { userId, count: materials?.length });
 
     if (!userId) {
-      console.error('❌ Missing userId');
       return res.status(400).json({ error: '缺少用户ID' });
     }
 
     if (!Array.isArray(materials)) {
-      console.error('❌ materials is not an array:', materials);
-      return res.status(400).json({ error: 'materials 必须是数组格式' });
+      return res.status(400).json({ error: 'materials必须是数组' });
     }
 
-    if (materials.length === 0) {
-      console.log('📭 No materials to sync');
-      return res.json({ success: true, count: 0 });
-    }
-
-    // 检查 Supabase 凭证
+    // 检查Supabase配置
     if (!supabaseUrl || !supabaseKey) {
-      console.error('❌ Supabase credentials not configured');
-      // 返回成功但记录错误日志
-      console.log(`⚠️ 跳过数据库同步，共 ${materials.length} 个材料`);
-      return res.json({ success: true, count: materials.length, skipped: true, reason: '数据库未配置' });
+      console.error('❌ Supabase credentials NOT configured!');
+      return res.status(500).json({ error: '数据库配置未完成，请联系管理员' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    console.log('✅ Supabase client created successfully');
+    console.log('✅ Supabase client created');
 
-    // 逐个处理材料
     let successCount = 0;
+    const results = [];
+
     for (const material of materials) {
       const record = {
         id: material.id,
@@ -67,38 +59,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
 
       try {
-        const { data: existingData } = await supabase
+        // 首先查询是否存在
+        const { data: existing, error: fetchError } = await supabase
           .from('materials')
           .select('id')
           .eq('id', material.id)
           .limit(1);
 
-        const exists = existingData && existingData.length > 0;
+        if (fetchError) {
+          console.error(`❌ Fetch error for ${material.id}:`, fetchError);
+          results.push({ id: material.id, status: 'error', error: fetchError.message });
+          continue;
+        }
+
+        const exists = existing && existing.length > 0;
 
         if (exists) {
+          // 更新现有记录
           const { error: updateError } = await supabase
             .from('materials')
             .update(record)
             .eq('id', material.id);
 
-          if (!updateError) successCount++;
+          if (updateError) {
+            console.error(`❌ Update error for ${material.id}:`, updateError);
+            results.push({ id: material.id, status: 'error', error: updateError.message });
+          } else {
+            console.log(`✅ Updated material ${material.id}`);
+            successCount++;
+            results.push({ id: material.id, status: 'updated' });
+          }
         } else {
+          // 插入新记录
           const { error: insertError } = await supabase
             .from('materials')
             .insert(record);
 
-          if (!insertError) successCount++;
+          if (insertError) {
+            console.error(`❌ Insert error for ${material.id}:`, insertError);
+            results.push({ id: material.id, status: 'error', error: insertError.message });
+          } else {
+            console.log(`✅ Inserted material ${material.id}`);
+            successCount++;
+            results.push({ id: material.id, status: 'inserted' });
+          }
         }
       } catch (err) {
-        console.error(`❌ Error processing material ${material.id}:`, err);
+        console.error(`❌ Exception processing ${material.id}:`, err);
+        results.push({ id: material.id, status: 'error', error: String(err) });
       }
     }
 
-    console.log(`✅ Successfully synced ${successCount} out of ${materials.length} materials`);
-    return res.json({ success: true, count: successCount });
+    // 验证一下数据是否真的保存了
+    const { data: verificationData, error: verifyError } = await supabase
+      .from('materials')
+      .select('id, title')
+      .order('last_modified', { ascending: false })
+      .limit(5);
+
+    if (verifyError) {
+      console.error('❌ Verification error:', verifyError);
+    } else {
+      console.log('📋 Recent materials:', verificationData);
+    }
+
+    console.log(`✅ Final result: ${successCount}/${materials.length} materials synced`);
+    return res.json({ 
+      success: true, 
+      count: successCount, 
+      total: materials.length,
+      results: results,
+      recent: verificationData
+    });
     
   } catch (error: any) {
     console.error('💥 Unexpected error:', error);
-    res.status(500).json({ error: error.message || '服务器内部错误' });
+    return res.status(500).json({ error: error.message || '服务器内部错误' });
   }
 }
