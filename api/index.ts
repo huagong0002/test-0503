@@ -16,7 +16,6 @@ const supabaseKey: string = process.env.SUPABASE_KEY || '';
 let supabase: SupabaseClient | null = null;
 
 try {
-  // 仅在环境便利存在且格式正确时初始化，防止启动崩溃
   if (supabaseUrl && supabaseKey && supabaseUrl.startsWith('http')) {
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log('✅ Supabase Client Initialized Successfully');
@@ -30,7 +29,6 @@ try {
 // --- 2. 中间件配置 (Middleware) ---
 app.set('trust proxy', true);
 
-// 跨域配置：允许所有来源以便调试，支持凭证
 app.use(cors({
   origin: true,
   credentials: true,
@@ -38,17 +36,15 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-JSON']
 }));
 
-// 解析 JSON 请求体，设置 50mb 上限以支持大型资料同步
 app.use(express.json({ limit: '50mb' }));
 
-// 简易日志记录器
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// --- 3. 内存备用数据库 (当数据库连接失败或未配置时保证程序不崩) ---
-let LOCAL_STORE: Record<string, any[]> = {}; // 用户 ID -> 资料数组
+// --- 3. 内存备用数据库 ---
+let LOCAL_STORE: Record<string, any[]> = {};
 let LOCAL_USERS: any[] = [
   { id: '1', username: 'admin', password: 'admin123', role: 'admin', name: 'Jerry Admin' },
   { id: '2', username: 'test', password: 'password', role: 'user', name: 'Test User' }
@@ -56,15 +52,15 @@ let LOCAL_USERS: any[] = [
 
 // --- 4. API 路由定义 ---
 
-/**
- * [GET] 健康检查
- * 用于排查 Vercel 环境变量和数据库连接状态
- */
 app.get('/api/health', async (req: Request, res: Response) => {
   let dbStatus = 'Not Attempted';
   if (supabase) {
-    const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
-    dbStatus = error ? `Error: ${error.message}` : 'Connected';
+    try {
+      const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+      dbStatus = error ? `Error: ${error.message}` : 'Connected';
+    } catch (err) {
+      dbStatus = `Exception: ${(err as Error).message}`;
+    }
   }
 
   res.json({
@@ -80,9 +76,6 @@ app.get('/api/health', async (req: Request, res: Response) => {
   });
 });
 
-/**
- * [POST] 用户登录
- */
 app.post('/api/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
   
@@ -97,7 +90,6 @@ app.post('/api/login', async (req: Request, res: Response) => {
 
       if (data) {
         const { password: _, ...userWithoutPassword } = data;
-        // Map user fields from snake_case to camelCase
         const mappedUser = {
           id: userWithoutPassword.id,
           username: userWithoutPassword.username,
@@ -111,7 +103,6 @@ app.post('/api/login', async (req: Request, res: Response) => {
     console.error('Database Login Error:', err);
   }
 
-  // 备用逻辑：检查本地模拟数据库
   const user = LOCAL_USERS.find(u => u.username === username && u.password === password);
   if (user) {
     const { password: _, ...userWithoutPassword } = user;
@@ -121,15 +112,11 @@ app.post('/api/login', async (req: Request, res: Response) => {
   res.status(401).json({ error: '用户名或密码错误' });
 });
 
-/**
- * [POST] 用户注册
- */
 app.post('/api/register', async (req: Request, res: Response) => {
   const { username, password, email } = req.body;
   
   try {
     if (supabase) {
-      // Check if user already exists
       const { data: existingUser } = await supabase
         .from('users')
         .select('*')
@@ -140,7 +127,6 @@ app.post('/api/register', async (req: Request, res: Response) => {
         return res.status(400).json({ error: '用户名已存在' });
       }
       
-      // Create new user
       const newUser = {
         id: randomUUID(),
         username,
@@ -167,7 +153,6 @@ app.post('/api/register', async (req: Request, res: Response) => {
       }
       if (error) throw error;
     } else {
-      // Fallback: add to local store
       const newUser = {
         id: randomUUID(),
         username,
@@ -185,9 +170,6 @@ app.post('/api/register', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * [GET] 获取所有资料库内容
- */
 app.get('/api/materials', async (req: Request, res: Response) => {
   try {
     if (supabase) {
@@ -197,7 +179,6 @@ app.get('/api/materials', async (req: Request, res: Response) => {
         .order('last_modified', { ascending: false });
       
       if (data) {
-        // Map database snake_case fields to frontend camelCase
         const mappedData = data.map((item: any) => ({
           id: item.id,
           userId: item.user_id,
@@ -215,13 +196,9 @@ app.get('/api/materials', async (req: Request, res: Response) => {
     console.error('Fetch Materials Error:', err);
   }
   
-  // 备用逻辑：返回内存中的所有资料
   res.json(Object.values(LOCAL_STORE).flat().sort((a, b) => b.lastModified - a.lastModified));
 });
 
-/**
- * [POST] 同步资料库 (批量 Upsert)
- */
 app.post('/api/materials/sync', async (req: Request, res: Response) => {
   const { materials, userId } = req.body;
 
@@ -234,20 +211,18 @@ app.post('/api/materials/sync', async (req: Request, res: Response) => {
   }
 
   try {
-    // --- 精准映射：前端对象 -> 数据库列名 ---
     const records = materials.map((m: any) => ({
-      id: m.id,                       // 对应数据库 id (text)
-      user_id: m.userId || userId,    // 对应数据库 user_id (text)
-      title: m.title || '未命名资料',  // 对应数据库 title (text)
-      audio_url: m.audioUrl || '',    // 对应数据库 audio_url (text)
-      script: m.script || '',         // 对应数据库 script (text)
-      segments: m.segments || [],     // 对应数据库 segments (jsonb)
-      last_modified: m.lastModified || Date.now() // 对应数据库 last_modified (int8)
+      id: m.id,
+      user_id: m.userId || userId,
+      title: m.title || '未命名资料',
+      audio_url: m.audioUrl || '',
+      script: m.script || '',
+      segments: m.segments || [],
+      last_modified: m.lastModified || Date.now()
     }));
 
     console.log(`准备同步 ${records.length} 条数据到 Supabase...`);
 
-    // 执行 upsert
     const { data, error } = await supabase
       .from('materials')
       .upsert(records, { onConflict: 'id' });
@@ -270,9 +245,6 @@ app.post('/api/materials/sync', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * [DELETE] 删除资料 (仅限管理员或所有者逻辑可在此扩展)
- */
 app.delete('/api/materials/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   
@@ -285,7 +257,6 @@ app.delete('/api/materials/:id', async (req: Request, res: Response) => {
     console.error('Delete Error:', err);
   }
 
-  // 备用逻辑：从内存清理
   Object.keys(LOCAL_STORE).forEach(uid => {
     LOCAL_STORE[uid] = LOCAL_STORE[uid].filter(m => m.id !== id);
   });
@@ -293,14 +264,10 @@ app.delete('/api/materials/:id', async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-// --- 5. 统一错误处理与导出 ---
-
-// 处理未匹配的 API 路径
 app.use('/api/*', (req: Request, res: Response) => {
   res.status(404).json({ error: `接口 ${req.originalUrl} 未找到` });
 });
 
-// 全局 500 错误捕获
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('💥 Critical Server Error:', err);
   res.status(500).json({ 
@@ -309,5 +276,13 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// 导出给 Vercel 使用
+// Vercel Serverless Function 兼容导出
 export default app;
+
+// 开发环境启动（ES Module 兼容）
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
