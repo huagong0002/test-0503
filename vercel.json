@@ -36,7 +36,8 @@
     },
     {
       "src": "/api/materials/(.*)",
-      "dest": "/api/materials/[id].ts"
+      "dest": "/api/materials/[id].ts",
+      "methods": ["DELETE"]
     },
     {
       "src": "/(.*)",

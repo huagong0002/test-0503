@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { id } = req.query;
+  const id = (req.query as Record<string, string>).id;
 
   try {
     if (supabaseUrl && supabaseKey) {
