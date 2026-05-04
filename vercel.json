@@ -28,11 +28,13 @@
     },
     {
       "src": "/api/materials/sync",
-      "dest": "/api/materials.ts"
+      "dest": "/api/materials.ts",
+      "methods": ["POST"]
     },
     {
-      "src": "/api/materials$",
-      "dest": "/api/materials.ts"
+      "src": "/api/materials",
+      "dest": "/api/materials.ts",
+      "methods": ["GET"]
     },
     {
       "src": "/api/materials/(.*)",
