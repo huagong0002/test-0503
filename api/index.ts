@@ -97,7 +97,14 @@ app.post('/api/login', async (req: Request, res: Response) => {
 
       if (data) {
         const { password: _, ...userWithoutPassword } = data;
-        return res.json({ success: true, user: userWithoutPassword });
+        // Map user fields from snake_case to camelCase
+        const mappedUser = {
+          id: userWithoutPassword.id,
+          username: userWithoutPassword.username,
+          email: userWithoutPassword.email,
+          role: userWithoutPassword.role
+        };
+        return res.json({ success: true, user: mappedUser });
       }
     }
   } catch (err) {
@@ -115,6 +122,69 @@ app.post('/api/login', async (req: Request, res: Response) => {
 });
 
 /**
+ * [POST] 用户注册
+ */
+app.post('/api/register', async (req: Request, res: Response) => {
+  const { username, password, email } = req.body;
+  
+  try {
+    if (supabase) {
+      // Check if user already exists
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('username', username)
+        .maybeSingle();
+      
+      if (existingUser) {
+        return res.status(400).json({ error: '用户名已存在' });
+      }
+      
+      // Create new user
+      const newUser = {
+        id: randomUUID(),
+        username,
+        password,
+        email: email || '',
+        role: 'user'
+      };
+      
+      const { data, error } = await supabase
+        .from('users')
+        .insert(newUser)
+        .select()
+        .single();
+      
+      if (data) {
+        const { password: _, ...userWithoutPassword } = data;
+        const mappedUser = {
+          id: userWithoutPassword.id,
+          username: userWithoutPassword.username,
+          email: userWithoutPassword.email,
+          role: userWithoutPassword.role
+        };
+        return res.json({ success: true, user: mappedUser });
+      }
+      if (error) throw error;
+    } else {
+      // Fallback: add to local store
+      const newUser = {
+        id: randomUUID(),
+        username,
+        password,
+        email: email || '',
+        role: 'user'
+      };
+      LOCAL_USERS.push(newUser);
+      const { password: _, ...userWithoutPassword } = newUser;
+      return res.json({ success: true, user: userWithoutPassword });
+    }
+  } catch (err) {
+    console.error('Database Register Error:', err);
+    return res.status(500).json({ error: '注册失败，请稍后重试' });
+  }
+});
+
  * [GET] 获取所有资料库内容
  */
 app.get('/api/materials', async (req: Request, res: Response) => {
@@ -125,7 +195,19 @@ app.get('/api/materials', async (req: Request, res: Response) => {
         .select('*')
         .order('last_modified', { ascending: false });
       
-      if (data) return res.json(data);
+      if (data) {
+        // Map database snake_case fields to frontend camelCase
+        const mappedData = data.map((item: any) => ({
+          id: item.id,
+          userId: item.user_id,
+          title: item.title,
+          audioUrl: item.audio_url,
+          script: item.script,
+          segments: item.segments,
+          lastModified: item.last_modified
+        }));
+        return res.json(mappedData);
+      }
       if (error) throw error;
     }
   } catch (err) {
