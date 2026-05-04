@@ -258,7 +258,11 @@ export default function App() {
           credentials: API_BASE ? 'include' : 'same-origin'
         });
         if (response.ok) {
-          setMaterials(prev => prev.filter(m => m.id !== id));
+          setMaterials(prev => {
+            const updated = prev.filter(m => m.id !== id);
+            localStorage.setItem(`echomaster_library_shared`, JSON.stringify(updated));
+            return updated;
+          });
           if (currentMaterialId === id) setCurrentMaterialId(null);
         } else {
           const err = await response.json();
