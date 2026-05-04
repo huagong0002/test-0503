@@ -1,124 +1,90 @@
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
+// 加载环境变量
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
-const PORT = 3000;
 
-// Supabase Initialization
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_KEY || '';
+// --- 1. Supabase 核心初始化 ---
+const supabaseUrl: string = process.env.SUPABASE_URL || '';
+const supabaseKey: string = process.env.SUPABASE_ANON_KEY || '';
 
-let : any = null;
+let supabase: SupabaseClient | null = null;
 
 try {
+  // 仅在环境便利存在且格式正确时初始化，防止启动崩溃
   if (supabaseUrl && supabaseKey && supabaseUrl.startsWith('http')) {
     supabase = createClient(supabaseUrl, supabaseKey);
-    console.log('✅ Supabase Client Initialized');
+    console.log('✅ Supabase Client Initialized Successfully');
   } else {
-    console.warn(`⚠️ Supabase URL or Key missing. URL present: ${!!supabaseUrl}, Key present: ${!!supabaseKey}`);
+    console.warn('⚠️ Supabase credentials missing or invalid. Check Environment Variables.');
   }
 } catch (error) {
-  console.error('❌ Supabase Init Error:', error);
+  console.error('❌ Supabase Initialization Error:', error);
 }
 
-// Global Error Handler for unhandled rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-// 0. Trust Proxy
+// --- 2. 中间件配置 (Middleware) ---
 app.set('trust proxy', true);
 
-// 1. CORS Middleware
+// 跨域配置：允许所有来源以便调试，支持凭证
 app.use(cors({
-  origin: true, // Allow all origins for debugging, or keep your logic
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin', 'Cookie', 'X-JSON'],
-  exposedHeaders: ['Set-Cookie', 'Content-Length']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-JSON']
 }));
 
+// 解析 JSON 请求体，设置 50mb 上限以支持大型资料同步
 app.use(express.json({ limit: '50mb' }));
 
-// 2. Logger
-app.use((req, res, next) => {
+// 简易日志记录器
+app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Fallbacks with User Isolation
-let LOCAL_STORE: Record<string, any[]> = {}; // Map of userId -> materials[]
+// --- 3. 内存备用数据库 (当数据库连接失败或未配置时保证程序不崩) ---
+let LOCAL_STORE: Record<string, any[]> = {}; // 用户 ID -> 资料数组
 let LOCAL_USERS: any[] = [
-  { id: '1', username: 'admin', password: 'admin123', email: 'admin@e-listen.com', role: 'admin' },
-  { id: '2', username: 'tester', password: 'password', email: 'tester@example.com', role: 'user' }
+  { id: '1', username: 'admin', password: 'admin123', role: 'admin', name: 'Jerry Admin' },
+  { id: '2', username: 'test', password: 'password', role: 'user', name: 'Test User' }
 ];
 
-// 3. API Routes
-app.get('/api/health', async (req, res) => {
-  try {
-    let dbTest = 'Not Attempted';
-    let dbError = null;
-    
-    if (supabase) {
-      const { data, error } = await supabase.from('users').select('count');
-      if (error) {
-        dbTest = 'Failed';
-        dbError = error.message;
-      } else {
-        dbTest = 'Success';
-      }
-    }
+// --- 4. API 路由定义 ---
 
-    res.json({ 
-      status: 'ok', 
-      supabase: !!supabase,
-      databaseConnection: dbTest,
-      databaseError: dbError,
-      env: {
-        hasUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
-        urlPrefix: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').substring(0, 10) + '...',
-        hasKey: !!process.env.SUPABASE_KEY || !!process.env.VITE_SUPABASE_KEY,
-        keyLength: (process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_KEY || '').length,
-        nodeEnv: process.env.NODE_ENV,
-        allKeys: Object.keys(process.env).filter(k => k.includes('SUPABASE'))
-      },
-      time: new Date().toISOString()
-    });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+/**
+ * [GET] 健康检查
+ * 用于排查 Vercel 环境变量和数据库连接状态
+ */
+app.get('/api/health', async (req: Request, res: Response) => {
+  let dbStatus = 'Not Attempted';
+  if (supabase) {
+    const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+    dbStatus = error ? `Error: ${error.message}` : 'Connected';
   }
-});
 
-app.get('/api/cors-test', (req, res) => {
-  res.json({ 
-    message: 'CORS is working', 
-    origin: req.get('Origin'),
-    headers: req.headers
-  });
-});
-
-app.get('/debug/host', (req, res) => {
   res.json({
-    host: req.get('host'),
-    origin: req.get('origin'),
-    headers: req.headers,
-    env: process.env.NODE_ENV,
-    url: req.url
+    status: 'ok',
+    supabaseConnected: !!supabase,
+    databaseConnection: dbStatus,
+    env: {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+      nodeEnv: process.env.NODE_ENV
+    },
+    time: new Date().toISOString()
   });
 });
 
-const handleLogin = async (req, res) => {
-  const { username, password } = req.method === 'GET' ? req.query : req.body;
+/**
+ * [POST] 用户登录
+ */
+app.post('/api/login', async (req: Request, res: Response) => {
+  const { username, password } = req.body;
   
   try {
     if (supabase) {
@@ -129,24 +95,16 @@ const handleLogin = async (req, res) => {
         .eq('password', password)
         .maybeSingle();
 
-      if (error) throw error;
-
       if (data) {
-        const { password: _, ...userWithoutPassword } = data as any;
+        const { password: _, ...userWithoutPassword } = data;
         return res.json({ success: true, user: userWithoutPassword });
       }
     }
-  } catch (err: any) {
-    console.error('Supabase Login Error:', err.message);
-    if (err.message?.includes('relation "users" does not exist')) {
-      return res.status(500).json({ 
-        error: '数据库表 "users" 未找到。', 
-        suggestion: '请先运行 SETUP_SUPABASE.sql 脚本。' 
-      });
-    }
+  } catch (err) {
+    console.error('Database Login Error:', err);
   }
 
-  // Fallback to local
+  // 备用逻辑：检查本地模拟数据库
   const user = LOCAL_USERS.find(u => u.username === username && u.password === password);
   if (user) {
     const { password: _, ...userWithoutPassword } = user;
@@ -154,242 +112,104 @@ const handleLogin = async (req, res) => {
   }
   
   res.status(401).json({ error: '用户名或密码错误' });
-};
+});
 
-const handleRegister = async (req, res) => {
-  const { username, password } = req.body;
-  
+/**
+ * [GET] 获取所有资料库内容
+ */
+app.get('/api/materials', async (req: Request, res: Response) => {
   try {
     if (supabase) {
-      // Check for existing user
-      const { data: existing, error: checkError } = await supabase
-        .from('users')
-        .select('username')
-        .eq('username', username)
-        .maybeSingle();
-
-      if (checkError) throw checkError;
-      if (existing) {
-        return res.status(400).json({ error: '该用户名已被占用' });
-      }
-
-      // Insert new user
-      const { data, error } = await supabase
-        .from('users')
-        .insert([{ id: randomUUID(), username, password, email: '', role: 'user' }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        const { password: _, ...userWithoutPassword } = data as any;
-        return res.json({ success: true, user: userWithoutPassword });
-      }
-    }
-  } catch (err: any) {
-    console.error('Supabase Register Error:', err.message);
-    if (err.message?.includes('relation "users" does not exist')) {
-      return res.status(500).json({ 
-        error: '数据库表 "users" 未找到。', 
-        suggestion: '请先运行 SETUP_SUPABASE.sql 脚本。' 
-      });
-    }
-    if (err.code === '23505') return res.status(400).json({ error: '该用户名已被占用' });
-  }
-
-  // Fallback if Supabase fails
-  if (LOCAL_USERS.find(u => u.username === username)) {
-    return res.status(400).json({ error: '该用户名已被占用' });
-  }
-  const newUser = { id: randomUUID(), username, password, email: '', role: 'user' };
-  LOCAL_USERS.push(newUser);
-  const { password: _, ...userWithoutPassword } = newUser;
-  return res.json({ success: true, user: userWithoutPassword });
-};
-
-app.all(['/api/login', '/login'], handleLogin);
-app.all(['/api/register', '/register'], handleRegister);
-
-app.get('/api/materials', async (req, res) => {
-  try {
-    if (supabase) {
-      // Return ALL materials for a shared library experience
       const { data, error } = await supabase
         .from('materials')
         .select('*')
         .order('last_modified', { ascending: false });
       
+      if (data) return res.json(data);
       if (error) throw error;
-      
-      const formatted = (data || []).map(m => ({
-        id: m.id,
-        title: m.title,
-        audioUrl: m.audio_url,
-        script: m.script,
-        segments: m.segments || [],
-        lastModified: m.last_modified,
-        userId: m.user_id
-      }));
-      
-      return res.json(formatted);
     }
-  } catch (err: any) {
-    console.error('Fetch Materials Error:', err.message);
+  } catch (err) {
+    console.error('Fetch Materials Error:', err);
   }
   
-  // Flatten local store for everyone to see everything in memory fallback
-  const allLocal = Object.values(LOCAL_STORE).flat();
-  res.json(allLocal.sort((a,b) => b.lastModified - a.lastModified));
+  // 备用逻辑：返回内存中的所有资料
+  res.json(Object.values(LOCAL_STORE).flat().sort((a, b) => b.lastModified - a.lastModified));
 });
 
-app.post('/api/materials/sync', async (req, res) => {
+/**
+ * [POST] 同步资料库 (批量 Upsert)
+ */
+app.post('/api/materials/sync', async (req: Request, res: Response) => {
   const { materials, userId } = req.body;
-  
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
 
-  if (!Array.isArray(materials)) {
-    return res.status(400).json({ error: 'Invalid materials data' });
+  if (!userId || !Array.isArray(materials)) {
+    return res.status(400).json({ error: '无效的数据格式或缺少用户ID' });
   }
 
   try {
     if (supabase) {
       const records = materials.map(m => ({
         id: m.id,
-        user_id: m.userId || userId, // Preserve original creator if exists
-        title: m.title || 'Untitled',
+        user_id: userId,
+        title: m.title || '无标题资料',
         audio_url: m.audioUrl,
         script: m.script || '',
         segments: Array.isArray(m.segments) ? m.segments : [],
         last_modified: m.lastModified || Date.now()
       }));
 
-      const { error } = await supabase
-        .from('materials')
-        .upsert(records, { onConflict: 'id' });
-
-      if (error) {
-        console.error('❌ Supabase Upsert Error Detail:', {
-          code: error.code,
-          message: error.message,
-          hint: error.hint,
-          details: error.details
-        });
-        throw error;
-      }
+      const { error } = await supabase.from('materials').upsert(records, { onConflict: 'id' });
+      if (error) throw error;
+      
       return res.json({ success: true, count: materials.length });
-    } else {
-      console.warn('⚠️ Supabase client not initialized, using memory fallback');
     }
-  } catch (err: any) {
-    console.error('Sync Error Trace:', err);
+  } catch (err) {
+    console.error('Sync Error:', err);
   }
 
-  // Fallback to local memory (shared)
-  if (!LOCAL_STORE['shared']) LOCAL_STORE['shared'] = [];
-  
-  materials.forEach(newM => {
-    const index = LOCAL_STORE['shared'].findIndex(m => m.id === newM.id);
-    if (index !== -1) {
-      if (newM.lastModified > LOCAL_STORE['shared'][index].lastModified) {
-        LOCAL_STORE['shared'][index] = { ...newM, user_id: userId };
-      }
-    } else {
-      LOCAL_STORE['shared'].push({ ...newM, user_id: userId });
-    }
-  });
-  
-  LOCAL_STORE['shared'].sort((a, b) => b.lastModified - a.lastModified);
-  res.json({ success: true, count: LOCAL_STORE['shared'].length });
+  // 备用逻辑：存入本地内存
+  LOCAL_STORE[userId] = materials;
+  res.json({ success: true, count: materials.length, storage: 'memory' });
 });
 
-app.delete('/api/materials/:id', async (req, res) => {
+/**
+ * [DELETE] 删除资料 (仅限管理员或所有者逻辑可在此扩展)
+ */
+app.delete('/api/materials/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const username = req.query.username as string;
-
-  // ONLY admin can delete
-  if (username !== 'admin') {
-    return res.status(403).json({ error: '只有管理员可以删除库文件' });
-  }
-
+  
   try {
     if (supabase) {
-      await supabase.from('materials').delete().eq('id', id);
+      const { error } = await supabase.from('materials').delete().eq('id', id);
+      if (error) throw error;
     }
-  } catch (e) {
-    console.error('Delete Error:', e);
+  } catch (err) {
+    console.error('Delete Error:', err);
   }
 
-  // Also remove from local fallback
+  // 备用逻辑：从内存清理
   Object.keys(LOCAL_STORE).forEach(uid => {
     LOCAL_STORE[uid] = LOCAL_STORE[uid].filter(m => m.id !== id);
   });
-  
+
   res.json({ success: true });
 });
 
-// API 404 handler - MUST be before the Vite/Static fallback
-app.all('/api/*', (req, res) => {
-  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ 
-    error: 'API 接口不存在', 
-    method: req.method,
-    path: req.originalUrl 
-  });
+// --- 5. 统一错误处理与导出 ---
+
+// 处理未匹配的 API 路径
+app.use('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({ error: `接口 ${req.originalUrl} 未找到` });
 });
 
-// Vite middleware for development
-async function startServer() {
-  const isVercel = !!process.env.VERCEL;
-  
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const { createServer } = await import('vite');
-      const vite = await createServer({
-        server: { middlewareMode: true },
-        appType: 'spa',
-      });
-      app.use(vite.middlewares);
-      console.log('✅ Vite middleware initialized');
-    } catch (e) {
-      console.error('❌ Failed to load Vite:', e);
-    }
-  } else if (!isVercel) {
-    // Only serve static files if NOT on Vercel (Vercel handles this via vercel.json)
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  // Only listen if not on Vercel
-  if (!isVercel) {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running locally on http://localhost:${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
-  } else {
-    console.log('🚀 Server running in Vercel environment');
-  }
-}
-
-// Start the server
-startServer().catch(err => {
-  console.error('Failed to start server:', err);
-});
-
-// Export for Vercel
-app.use((err, req, res, next) => {
-  console.error('💥 Global Error Handler:', err);
+// 全局 500 错误捕获
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('💥 Critical Server Error:', err);
   res.status(500).json({ 
-    error: 'Internal Server Error', 
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    error: '服务器内部错误', 
+    message: process.env.NODE_ENV === 'development' ? err.message : '请检查服务器日志'
   });
 });
 
+// 导出给 Vercel 使用
 export default app;
-
