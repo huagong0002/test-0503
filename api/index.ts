@@ -143,33 +143,48 @@ app.post('/api/materials/sync', async (req: Request, res: Response) => {
   const { materials, userId } = req.body;
 
   if (!userId || !Array.isArray(materials)) {
-    return res.status(400).json({ error: '无效的数据格式或缺少用户ID' });
+    return res.status(400).json({ error: '数据格式不正确或缺少用户ID' });
+  }
+
+  if (!supabase) {
+    return res.status(500).json({ error: '数据库未连接' });
   }
 
   try {
-    if (supabase) {
-      const records = materials.map(m => ({
-        id: m.id,
-        user_id: userId,
-        title: m.title || '无标题资料',
-        audio_url: m.audioUrl,
-        script: m.script || '',
-        segments: Array.isArray(m.segments) ? m.segments : [],
-        last_modified: m.lastModified || Date.now()
-      }));
+    // --- 精准映射：前端对象 -> 数据库列名 ---
+    const records = materials.map((m: any) => ({
+      id: m.id,                       // 对应数据库 id (text)
+      user_id: m.userId || userId,    // 对应数据库 user_id (text)
+      title: m.title || '未命名资料',  // 对应数据库 title (text)
+      audio_url: m.audioUrl || '',    // 对应数据库 audio_url (text)
+      script: m.script || '',         // 对应数据库 script (text)
+      segments: m.segments || [],     // 对应数据库 segments (jsonb)
+      last_modified: m.lastModified || Date.now() // 对应数据库 last_modified (int8)
+    }));
 
-      const { error } = await supabase.from('materials').upsert(records, { onConflict: 'id' });
-      if (error) throw error;
-      
-      return res.json({ success: true, count: materials.length });
+    console.log(`准备同步 ${records.length} 条数据到 Supabase...`);
+
+    // 执行 upsert
+    const { data, error } = await supabase
+      .from('materials')
+      .upsert(records, { onConflict: 'id' });
+
+    if (error) {
+      console.error('❌ Supabase 同步详细报错:', error);
+      return res.status(400).json({ 
+        success: false, 
+        error: error.message,
+        details: error.details 
+      });
     }
-  } catch (err) {
-    console.error('Sync Error:', err);
-  }
 
-  // 备用逻辑：存入本地内存
-  LOCAL_STORE[userId] = materials;
-  res.json({ success: true, count: materials.length, storage: 'memory' });
+    console.log('✅ 数据同步成功');
+    res.json({ success: true, count: records.length });
+
+  } catch (err: any) {
+    console.error('💥 服务器同步逻辑崩溃:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /**
