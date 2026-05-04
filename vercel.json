@@ -31,7 +31,7 @@
       "dest": "/api/materials.ts"
     },
     {
-      "src": "/api/materials",
+      "src": "/api/materials$",
       "dest": "/api/materials.ts"
     },
     {
