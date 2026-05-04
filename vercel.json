@@ -28,18 +28,15 @@
     },
     {
       "src": "/api/materials/sync",
-      "dest": "/api/materials.ts",
-      "methods": ["POST"]
+      "dest": "/api/materials.ts"
     },
     {
       "src": "/api/materials",
-      "dest": "/api/materials.ts",
-      "methods": ["GET"]
+      "dest": "/api/materials.ts"
     },
     {
       "src": "/api/materials/(.*)",
-      "dest": "/api/materials/[id].ts",
-      "methods": ["DELETE"]
+      "dest": "/api/materials/[id].ts"
     },
     {
       "src": "/(.*)",
