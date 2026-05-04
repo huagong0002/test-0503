@@ -4,6 +4,7 @@ type VercelRequest = {
   method: string;
   body: any;
   query: Record<string, string | string[] | undefined>;
+  params?: Record<string, string>;
   url?: string;
 };
 
@@ -19,6 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`=== DELETE Request Received ===`);
   console.log(`URL: ${req.url}`);
   console.log(`Query:`, JSON.stringify(req.query));
+  console.log(`Params:`, JSON.stringify(req.params));
   console.log(`Method: ${req.method}`);
   
   if (req.method !== 'DELETE') {
@@ -26,15 +28,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const id = req.query.id;
-  console.log(`ID from query:`, id, `(Type: ${typeof id})`);
+  // 在 Vercel Serverless Functions 中，路径参数通过 params 获取
+  const materialId = req.params?.id || (req.query.id as string);
+  console.log(`Material ID: "${materialId}"`);
   
-  if (!id) {
+  if (!materialId) {
     console.error('❌ Missing material ID');
     return res.status(400).json({ error: '缺少材料ID' });
   }
 
-  const materialId = Array.isArray(id) ? id[0] : id;
   console.log(`🗑️ Attempting to delete material with ID: "${materialId}"`);
 
   try {
@@ -88,7 +90,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ 
       error: error.message,
       deletedId: materialId,
-      query: req.query
+      query: req.query,
+      params: req.params
     });
   }
 }
