@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY, 
   user_id TEXT, -- Use TEXT instead of UUID for flexibility
+  creator_username TEXT,
   title TEXT NOT NULL,
   audio_url TEXT,
   script TEXT,

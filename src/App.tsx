@@ -239,7 +239,8 @@ export default function App() {
       script: '',
       segments: [],
       lastModified: Date.now(),
-      userId: user.id
+      userId: user.id,
+      creatorUsername: user.username
     };
     setMaterials(prev => [newMaterial, ...prev]);
     setCurrentMaterialId(newMaterial.id);
@@ -887,15 +888,40 @@ export default function App() {
                           )}>
                             <FileAudio size={24} />
                           </div>
-                          {(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') && (
-                            <button 
-                              onClick={(e) => deleteMaterial(e, m.id)}
-                              className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
-                              title="删除任务 (仅创建者或管理员)"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {!m.audioUrl && (
+                              <label className="p-2 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-blue-500/10 cursor-pointer" title="上传音频文件">
+                                <input 
+                                  type="file" 
+                                  accept="audio/*" 
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                      const audioUrl = event.target?.result as string;
+                                      setMaterials(prev => prev.map(item => 
+                                        item.id === m.id ? { ...item, audioUrl, lastModified: Date.now() } : item
+                                      ));
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }}
+                                />
+                                <Upload size={18} />
+                              </label>
+                            )}
+                            {(user?.id === m.userId || user?.role === 'admin' || user?.username === 'admin') && (
+                              <button 
+                                onClick={(e) => deleteMaterial(e, m.id)}
+                                className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-500/10"
+                                title="删除任务 (仅创建者或管理员)"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div>
@@ -920,6 +946,11 @@ export default function App() {
                             <span className="flex items-center gap-1"><Clock size={12} /> {m.segments.length}个分段</span>
                             <span className="flex items-center gap-1"><Calendar size={12} /> {m.lastModified ? new Date(m.lastModified).toLocaleDateString() : '未知时间'}</span>
                           </div>
+                          {m.creatorUsername && (
+                            <div className="flex items-center gap-1 mt-1 text-xs text-blue-400 font-medium">
+                              <User size={12} /> {m.creatorUsername}
+                            </div>
+                          )}
                         </div>
 
                         <div className="pt-4 mt-auto border-t border-white/5 flex items-center justify-between">

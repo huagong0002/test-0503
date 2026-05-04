@@ -34,6 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mappedData = data.map((item: any) => ({
         id: item.id,
         userId: item.user_id,
+        creatorUsername: item.creator_username || null,
         title: item.title,
         audioUrl: item.audio_url,
         script: item.script,
@@ -54,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const records = materials.map((m: any) => ({
         id: m.id,
         user_id: m.userId || userId,
+        creator_username: m.creatorUsername || userId,
         title: m.title || '未命名资料',
         audio_url: m.audioUrl || '',
         script: m.script || '',

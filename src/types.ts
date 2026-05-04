@@ -21,4 +21,5 @@ export interface ListeningMaterial {
   segments: AudioSegment[];
   lastModified: number;
   userId?: string;
+  creatorUsername?: string;
 }
