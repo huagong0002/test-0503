@@ -65,6 +65,41 @@ function generateId() {
   return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
 }
 
+function formatDate(timestamp: number | string | undefined): string {
+  if (!timestamp) {
+    return '未知时间';
+  }
+  
+  // 尝试解析时间戳
+  let date: Date;
+  
+  // 如果是字符串，尝试转换为数字
+  if (typeof timestamp === 'string') {
+    // 尝试解析为数字时间戳
+    const numValue = parseInt(timestamp, 10);
+    if (!isNaN(numValue)) {
+      timestamp = numValue;
+    } else {
+      // 尝试直接解析为日期字符串
+      date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        return '未知时间';
+      }
+      return date.toLocaleDateString('zh-CN');
+    }
+  }
+  
+  // 如果是数字时间戳
+  date = new Date(timestamp);
+  
+  // 检查是否为有效日期
+  if (isNaN(date.getTime())) {
+    return '未知时间';
+  }
+  
+  return date.toLocaleDateString('zh-CN');
+}
+
 export default function App() {
   const [user, setUser] = useState<UserType | null>(null);
   const [authForm, setAuthForm] = useState<'login' | 'register'>('login');
@@ -968,7 +1003,7 @@ export default function App() {
                           />
                           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-medium">
                             <span className="flex items-center gap-1"><Clock size={12} /> {m.segments.length}个分段</span>
-                            <span className="flex items-center gap-1"><Calendar size={12} /> {m.lastModified ? new Date(m.lastModified).toLocaleDateString() : '未知时间'}</span>
+                            <span className="flex items-center gap-1"><Calendar size={12} /> {formatDate(m.lastModified)}</span>
                           </div>
                           {/* 暂时禁用 creatorUsername 显示，等数据库添加列后恢复
                           {m.creatorUsername && (

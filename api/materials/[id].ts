@@ -1,22 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-type VercelRequest = {
-  method: string;
-  body: any;
-  query: Record<string, string | string[] | undefined>;
-  params?: Record<string, string>;
-  url?: string;
-};
-
-type VercelResponse = {
-  status: (code: number) => VercelResponse;
-  json: (data: any) => void;
-};
-
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   console.log(`=== DELETE Request Received ===`);
   console.log(`URL: ${req.url}`);
   console.log(`Query:`, JSON.stringify(req.query));
@@ -28,13 +12,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 多种方式获取 materialId，以确保可靠性
-  let materialId = 
-    req.params?.id || 
-    (req.query.id as string) ||
-    (req.url?.match(/\/api\/materials\/([^?]+)/)?.[1]);
+  // 在 Vercel Serverless Functions 中，路径参数通过 req.query 获取
+  // /api/materials/xxx 会被解析为 req.query.id = 'xxx'
+  let materialId = req.query.id;
   
-  console.log(`Material ID: "${materialId}"`);
+  // 如果没有，尝试从 URL 中提取
+  if (!materialId && req.url) {
+    const match = req.url.match(/\/api\/materials\/([^/?]+)/);
+    if (match) {
+      materialId = match[1];
+    }
+  }
+  
+  console.log(`Material ID from query: "${materialId}"`);
   
   if (!materialId) {
     console.error('❌ Missing material ID');
@@ -44,6 +34,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`🗑️ Attempting to delete material with ID: "${materialId}"`);
 
   try {
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
+    
     if (!supabaseUrl || !supabaseKey) {
       console.error('❌ Supabase credentials not configured');
       return res.status(500).json({ error: '数据库未配置' });
@@ -53,25 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`🔄 Connecting to Supabase...`);
     
-    // First, check if the material exists
-    const { data: existingData, error: fetchError } = await supabase
-      .from('materials')
-      .select('id')
-      .eq('id', materialId);
-    
-    if (fetchError) {
-      console.error('❌ Failed to check material existence:', fetchError);
-      throw fetchError;
-    }
-    
-    console.log(`📋 Existing materials with this ID:`, existingData?.length || 0);
-
-    if (!existingData || existingData.length === 0) {
-      console.log(`⚠️ Material not found, but returning success anyway`);
-      return res.json({ success: true, deletedId: materialId, note: '材料可能已被删除' });
-    }
-
-    // Now delete
+    // 删除材料
     const { error } = await supabase
       .from('materials')
       .delete()
@@ -90,9 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('💥 Delete Error:', error.message || error);
     res.status(500).json({ 
       error: error.message,
-      deletedId: materialId,
-      query: req.query,
-      params: req.params
+      deletedId: materialId
     });
   }
 }
