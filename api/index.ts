@@ -11,7 +11,7 @@ const app = express();
 
 // --- 1. Supabase 核心初始化 ---
 const supabaseUrl: string = process.env.SUPABASE_URL || '';
-const supabaseKey: string = process.env.SUPABASE_ANON_KEY || '';
+const supabaseKey: string = process.env.SUPABASE_KEY || '';
 
 let supabase: SupabaseClient | null = null;
 
