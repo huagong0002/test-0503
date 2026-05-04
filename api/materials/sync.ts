@@ -1,3 +1,20 @@
+function toTimestamp(value: any): number {
+  if (!value) return Date.now();
+  
+  if (typeof value === 'number') {
+    return value;
+  }
+  
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    if (!isNaN(date.getTime())) {
+      return date.getTime();
+    }
+  }
+  
+  return Date.now();
+}
+
 export default async function handler(req: any, res: any) {
   try {
     if (req.method !== 'POST') {
@@ -58,7 +75,6 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      // 构建最小化记录 - 只使用绝对必要的字段
       const record: any = {
         id: mat.id,
         user_id: mat.userId || userId,
@@ -66,21 +82,12 @@ export default async function handler(req: any, res: any) {
         audio_url: mat.audioUrl || '',
         script: mat.script || '',
         segments: mat.segments || [],
-        last_modified: mat.lastModified || Date.now()
+        last_modified: toTimestamp(mat.lastModified)
       };
-      
-      // 暂时禁用 creator_username，避免列缺失错误
-      // 我们可以稍后再添加这个功能
-      // if (mat.creatorUsername) {
-      //   record.creator_username = mat.creatorUsername;
-      // } else if (userId) {
-      //   record.creator_username = userId;
-      // }
 
       try {
         console.log(`🔄 Processing material: ${mat.id} - ${mat.title}`);
         
-        // 首先检查该记录是否存在
         const { data: existingRecords, error: fetchError } = await supabase
           .from('materials')
           .select('id')
@@ -97,7 +104,6 @@ export default async function handler(req: any, res: any) {
         console.log(`   Material exists: ${exists}`);
 
         if (exists) {
-          // 记录存在，进行更新
           console.log(`   Updating existing material`);
           const { error: updateError } = await supabase
             .from('materials')
@@ -113,7 +119,6 @@ export default async function handler(req: any, res: any) {
             success++;
           }
         } else {
-          // 记录不存在，进行插入
           console.log(`   Inserting new material`);
           const { error: insertError } = await supabase
             .from('materials')
